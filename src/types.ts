@@ -53,6 +53,7 @@ export interface Tool {
 }
 
 export interface OpenAIChatRequest {
+  stream_options?: { include_usage?: boolean };
   model: string;
   messages: OpenAIMessage[];
   temperature?: number;
@@ -137,6 +138,8 @@ export interface ProviderResponse {
   /** Name of the env key that produced this response (for per-key metrics). */
   keyUsed?: string;
   upstreamModel?: string;
+  /** True when every key is inside its sliding rate window (queue, don't fail over). */
+  windowFull?: boolean;
   success: boolean;
   response?: OpenAIChatResponse;
   /** Anthropic-native raw response (used by nativeChat path) */

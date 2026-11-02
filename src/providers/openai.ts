@@ -24,6 +24,9 @@ export class OpenAIProvider extends BaseProvider {
         presence_penalty: request.presence_penalty,
         stop: request.stop,
         stream: request.stream || false,
+        ...(request.stream && request.stream_options
+          ? { stream_options: request.stream_options }
+          : {}),
         tools: request.tools as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         tool_choice: request.tool_choice as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       };

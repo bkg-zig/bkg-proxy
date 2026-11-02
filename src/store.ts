@@ -10,6 +10,8 @@ export interface ClientKeyRecord {
   prefix: string;
   hash: string;
   createdAt: string;
+  /** Dashboard user that minted this key (Master for the admin token). */
+  owner?: string;
 }
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -92,7 +94,8 @@ async function saveClientKeys(env: Env, keys: ClientKeyRecord[]): Promise<void> 
 /** Creates a client API key. The plaintext is returned once and never stored. */
 export async function createClientKey(
   env: Env,
-  name: string
+  name: string,
+  owner = 'Master'
 ): Promise<{ record: ClientKeyRecord; plainKey: string }> {
   const plainKey = `blg_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
   const record: ClientKeyRecord = {
@@ -101,6 +104,7 @@ export async function createClientKey(
     prefix: plainKey.slice(0, 12),
     hash: await sha256Hex(plainKey),
     createdAt: new Date().toISOString(),
+    owner,
   };
   const keys = await listClientKeys(env);
   keys.push(record);
@@ -118,7 +122,12 @@ export async function deleteClientKey(env: Env, id: string): Promise<boolean> {
 
 export interface AdminUser {
   name: string;
-  hash: string;
+  /** SHA-256 of a login token (legacy dashboard users). */
+  hash?: string;
+  /** PBKDF2 password record: pbkdf2$iterations$saltHex$hashHex */
+  passwordHash?: string;
+  role: 'superuser' | 'admin' | 'user';
+  sessionVersion: number;
   createdAt: string;
 }
 
@@ -133,6 +142,13 @@ export interface Settings {
   retentionDays: number;
   sloPercent: number;
   users: AdminUser[];
+  heartbeatSec: number;
+  streamIdleSec: number;
+  maxWaitSec: number;
+  modelsTtlMin: number;
+  maxInflight: number;
+  strictPassthrough: boolean;
+  keyOwners: Record<string, string>;
 }
 
 export const UPSTREAM_KEY_NAMES = [
@@ -146,7 +162,7 @@ export const UPSTREAM_KEY_NAMES = [
 
 export function defaultSettings(): Settings {
   return {
-    keyRpm: Object.fromEntries(UPSTREAM_KEY_NAMES.map((k) => [k, 60])),
+    keyRpm: Object.fromEntries(UPSTREAM_KEY_NAMES.map((k) => [k, 40])),
     keyEnabled: Object.fromEntries(UPSTREAM_KEY_NAMES.map((k) => [k, true])),
     authMode: 'master+keys',
     upstreamUrl: '',
@@ -156,6 +172,13 @@ export function defaultSettings(): Settings {
     retentionDays: 30,
     sloPercent: 99.9,
     users: [],
+    heartbeatSec: 15,
+    streamIdleSec: 60,
+    maxWaitSec: 120,
+    modelsTtlMin: 10,
+    maxInflight: 0,
+    strictPassthrough: false,
+    keyOwners: {},
   };
 }
 
@@ -173,8 +196,13 @@ export async function loadSettings(env: Env): Promise<Settings> {
       ...parsed,
       keyRpm: { ...base.keyRpm, ...(parsed.keyRpm ?? {}) },
       keyEnabled: { ...base.keyEnabled, ...(parsed.keyEnabled ?? {}) },
-      users: Array.isArray(parsed.users) ? parsed.users : [],
+      users: (Array.isArray(parsed.users) ? parsed.users : []).map((u) => ({
+        ...u,
+        role: u.role ?? ('admin' as const),
+        sessionVersion: u.sessionVersion ?? 1,
+      })),
       modelLimits: parsed.modelLimits ?? {},
+      keyOwners: parsed.keyOwners ?? {},
     };
   } catch (error) {
     console.error('[Store] Failed to load settings:', error);
@@ -219,9 +247,45 @@ export async function saveSettings(env: Env, settings: Settings): Promise<void> 
 
 export function totalCapacity(settings: Settings): number {
   return UPSTREAM_KEY_NAMES.reduce(
-    (sum, name) => sum + (settings.keyEnabled[name] === false ? 0 : (settings.keyRpm[name] ?? 60)),
+    (sum, name) => sum + (settings.keyEnabled[name] === false ? 0 : (settings.keyRpm[name] ?? 40)),
     0
   );
+}
+
+const PBKDF2_ITERATIONS = 600_000;
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    key,
+    256
+  );
+  const hex = (buf: ArrayBuffer | Uint8Array) =>
+    [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${hex(salt)}$${hex(bits)}`;
+}
+
+export async function verifyPassword(password: string, record: string): Promise<boolean> {
+  try {
+    const [scheme, iterText, saltHex, hashHex] = record.split('$');
+    if (scheme !== 'pbkdf2') return false;
+    const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: Number(iterText), hash: 'SHA-256' },
+      key,
+      256
+    );
+    const actual = [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (actual.length !== hashHex.length) return false;
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ hashHex.charCodeAt(i);
+    return diff === 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function findClientKey(env: Env, token: string): Promise<ClientKeyRecord | null> {

@@ -89,7 +89,13 @@ audio{width:100%;margin-top:14px}
     <input id="adminToken" type="password" autocomplete="off" placeholder="Admin-Token einfügen">
     <label for="clientToken">Dein API-Key für Chat, Bilder und Sprache</label>
     <input id="clientToken" type="password" autocomplete="off" placeholder="Master-Token oder erstellter Key">
-    <div class="row" style="margin-top:14px"><button class="btn btn-primary" id="loginBtn" type="button">Anmelden und laden</button></div>
+    <div class="row" style="margin-top:14px"><button class="btn btn-primary" id="loginBtn" type="button">Mit Token anmelden und laden</button></div>
+    <label for="loginName">Oder mit Nutzername und Passwort</label>
+    <div class="row">
+      <div><input id="loginName" type="text" placeholder="Nutzername" autocomplete="username"></div>
+      <div><input id="loginPass" type="password" placeholder="Passwort" autocomplete="current-password"></div>
+      <div><button class="btn" id="passLoginBtn" type="button">Mit Passwort anmelden</button></div>
+    </div>
     <p class="status" id="loginStatus" role="status" aria-live="polite"></p>
   </section>
 
@@ -204,6 +210,10 @@ audio{width:100%;margin-top:14px}
       <div class="card"><p class="lbl">Höchste Minute</p><p class="big" id="peakBig">–</p><p class="muted" id="peakTxt"></p></div>
       <div class="card"><p class="lbl">Fehlbetrag an der Spitze</p><p class="big" id="shortfallBig">–</p><p class="muted">So viele Anfragen pro Minute fehlten an Kapazität in der vollsten Minute.</p></div>
     </div>
+    <div class="cards">
+      <div class="card"><p class="lbl">Warteschlange jetzt</p><p class="big" id="queueBig">–</p><p class="muted">Alle Clients teilen sich eine faire Reihenfolge: Wer zuerst kommt, kommt zuerst dran.</p></div>
+      <div class="card"><p class="lbl">Modelle unter Druck</p><p class="big" id="pressureBig">–</p><p class="muted" id="pressureTxt"></p></div>
+    </div>
     <h2>Jeder Key einzeln</h2><div id="keyMeters"></div>
     <h2>Abgelehnte Anfragen (429) pro Key</h2><div class="chart" id="chart429"></div>
   </section>
@@ -278,6 +288,17 @@ audio{width:100%;margin-top:14px}
     <input id="setMaxTokens" type="number" min="0" step="1">
     <label for="setModelLimits">Modell-Limits pro Minute, als JSON. Beispiel: {"auto": 30}</label>
     <textarea id="setModelLimits" style="font-family:var(--font-mono)">{}</textarea>
+    <h2>Warten, Streams und Katalog</h2>
+    <div class="row">
+      <div><label for="setMaxWait">Maximal warten auf freien Key (Sekunden)</label><input id="setMaxWait" type="number" min="0" step="1"></div>
+      <div><label for="setHeartbeat">Herzschlag im Stream (Sekunden)</label><input id="setHeartbeat" type="number" min="1" step="1"></div>
+      <div><label for="setStreamIdle">Stream ohne Daten kappen nach (Sekunden)</label><input id="setStreamIdle" type="number" min="5" step="1"></div>
+      <div><label for="setModelsTtl">Modell-Liste merken (Minuten)</label><input id="setModelsTtl" type="number" min="0" step="1"></div>
+    </div>
+    <label for="setStrict">Strikte Weiterleitung (keine Usage-Einspritzung in Streams)</label>
+    <select id="setStrict"><option value="false">Aus: Usage wird für genaue Zählung eingespritzt</option><option value="true">An: Anfragen gehen unverändert durch</option></select>
+    <label for="setKeyOwners">Key-Besitzer als JSON, Beispiel {"NVIDIA_KEY_1": "Anna"}</label>
+    <textarea id="setKeyOwners">{}</textarea>
     <h2>Zeit und Ziele</h2>
     <div class="row">
       <div><label for="setRangeDays">Standard-Zeitraum (Tage)</label><input id="setRangeDays" type="number" min="1" step="1"></div>
@@ -292,6 +313,10 @@ audio{width:100%;margin-top:14px}
     <div id="userTable"></div>
     <label for="userName">Name für neuen Nutzer</label>
     <input id="userName" type="text" placeholder="Zum Beispiel: Handy">
+    <label for="userPass">Passwort (mindestens 8 Zeichen, leer = Login-Token statt Passwort)</label>
+    <input id="userPass" type="password" placeholder="Passwort">
+    <label for="userRole">Rolle</label>
+    <select id="userRole"><option value="user">Nutzer: sieht alles, verwaltet nur eigene Keys</option><option value="admin">Admin: Einstellungen und Nutzer</option></select>
     <div class="row" style="margin-top:10px"><button class="btn btn-primary" id="createUserBtn" type="button">Nutzer erstellen</button></div>
     <label for="newUserOut">Nutzer-Token (nur einmal sichtbar)</label>
     <input id="newUserOut" type="text" readonly placeholder="Noch kein neuer Nutzer">
@@ -491,6 +516,10 @@ function renderAll(){
     '<p class="muted">Jetzt: '+fmt(k.lastMinute)+' von '+fmt(k.rpmLimit)+' pro Minute · Im Zeitraum: '+fmt(k.rangeRequests)+' Anfragen, '+fmt(k.range429)+' Mal 429</p></div>';
   }).join('');
   chart($('chart429'),seriesBy(A.series.rate429||[],'k',(r)=>Number(r.c)),'429');
+  $('queueBig').textContent=fmt(A.queue?A.queue.waiting:0)+' wartend';
+  const pressure=A.modelPressure||[];
+  $('pressureBig').textContent=pressure.length?pressure.map((m)=>m.route).join(', '):'keine';
+  $('pressureTxt').textContent=pressure.length?'Diese Modelle sind gerade erschöpft und warten, statt gesunde Keys zu verbrennen.':'Kein Modell ist gerade erschöpft.';
 
   // Settings/history
   if(A.history){
@@ -551,11 +580,13 @@ function renderSettings(){
   $('setUpstream').value=S.upstreamUrl||'';
   $('setMaxTokens').value=S.maxTokensCap;
   $('setModelLimits').value=JSON.stringify(S.modelLimits||{},null,2);
+  $('setMaxWait').value=S.maxWaitSec; $('setHeartbeat').value=S.heartbeatSec; $('setStreamIdle').value=S.streamIdleSec; $('setModelsTtl').value=S.modelsTtlMin;
+  $('setStrict').value=String(S.strictPassthrough); $('setKeyOwners').value=JSON.stringify(S.keyOwners||{},null,2);
   $('setRangeDays').value=S.defaultRangeDays;
   $('setRetentionDays').value=S.retentionDays;
   $('setSlo').value=S.sloPercent;
   $('userTable').innerHTML=S.users.length?'<table class="cyber-table"><thead><tr><th>Name</th><th>Erstellt</th><th>Aktion</th></tr></thead><tbody>'+
-    S.users.map((u)=>'<tr><td>'+esc(u.name)+'</td><td>'+esc(new Date(u.createdAt).toLocaleString('de-DE'))+'</td><td><button class="btn btn-danger" type="button" data-del-user="'+esc(u.name)+'">Löschen</button></td></tr>').join('')+'</tbody></table>'
+    S.users.map((u)=>'<tr><td>'+esc(u.name)+' ('+esc(u.role||'admin')+')</td><td>'+esc(new Date(u.createdAt).toLocaleString('de-DE'))+'</td><td><button class="btn btn-danger" type="button" data-del-user="'+esc(u.name)+'">Löschen</button></td></tr>').join('')+'</tbody></table>'
     :'<p class="muted">Nur das Master-Admin-Token.</p>';
   document.querySelectorAll('[data-del-user]').forEach((btn)=>btn.addEventListener('click',async()=>{
     if(!confirm('Nutzer wirklich löschen?')) return;
@@ -612,6 +643,18 @@ $('loginBtn').addEventListener('click',async()=>{
   }catch(e){ $('loginStatus').textContent='Anmeldung fehlgeschlagen: '+e.message; }
 });
 $('clientToken').addEventListener('change',()=>sessionStorage.setItem('blg_client',$('clientToken').value.trim()));
+$('passLoginBtn').addEventListener('click',async()=>{
+  try{
+    const res=await fetch('/admin/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('loginName').value.trim(),password:$('loginPass').value})});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(d.error&&d.error.message?d.error.message:('Fehler '+res.status));
+    sessionStorage.setItem('blg_client',$('clientToken').value.trim());
+    await loadAll(); renderOverviewSide();
+    if(TIMER) clearInterval(TIMER);
+    TIMER=setInterval(()=>{ loadAnalytics().catch(()=>{}); },3000);
+    $('loginStatus').innerHTML='<span class="ok">Angemeldet als '+esc(d.user.name)+' ('+esc(d.user.role)+').</span>';
+  }catch(e){ $('loginStatus').textContent='Anmeldung fehlgeschlagen: '+e.message; }
+});
 $('addModelBtn').addEventListener('click',async()=>{
   try{ await api('/admin/api/models',{method:'POST',body:JSON.stringify({name:$('newName').value.trim(),model:$('newModel').value.trim()})}); $('modelStatus').textContent='Modell gespeichert.'; await loadStatic(); renderOverviewSide(); }catch(e){ $('modelStatus').textContent=e.message; }
 });
@@ -632,7 +675,9 @@ $('saveSettingsBtn').addEventListener('click',async()=>{
     document.querySelectorAll('[data-enabled]').forEach((el)=>{ keyEnabled[el.getAttribute('data-enabled')]=el.value==='true'; });
     let modelLimits={};
     try{ modelLimits=JSON.parse($('setModelLimits').value||'{}'); }catch{ $('settingsStatus').textContent='Modell-Limits sind kein gültiges JSON.'; return; }
-    const body={...S,keyRpm,keyEnabled,authMode:$('setAuthMode').value,upstreamUrl:$('setUpstream').value.trim(),maxTokensCap:Number($('setMaxTokens').value),modelLimits,defaultRangeDays:Number($('setRangeDays').value),retentionDays:Number($('setRetentionDays').value),sloPercent:Number($('setSlo').value)};
+    let keyOwners={};
+    try{ keyOwners=JSON.parse($('setKeyOwners').value||'{}'); }catch{ $('settingsStatus').textContent='Key-Besitzer sind kein gültiges JSON.'; return; }
+    const body={...S,keyRpm,keyEnabled,keyOwners,authMode:$('setAuthMode').value,upstreamUrl:$('setUpstream').value.trim(),maxTokensCap:Number($('setMaxTokens').value),modelLimits,defaultRangeDays:Number($('setRangeDays').value),retentionDays:Number($('setRetentionDays').value),sloPercent:Number($('setSlo').value),maxWaitSec:Number($('setMaxWait').value),heartbeatSec:Number($('setHeartbeat').value),streamIdleSec:Number($('setStreamIdle').value),modelsTtlMin:Number($('setModelsTtl').value),strictPassthrough:$('setStrict').value==='true'};
     const d=await api('/admin/api/settings',{method:'PUT',body:JSON.stringify(body)});
     S={...d.settings,users:S.users};
     $('settingsStatus').innerHTML='<span class="ok">Gespeichert und sofort aktiv.</span>';

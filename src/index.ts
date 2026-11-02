@@ -1,4 +1,4 @@
-import { Env, OpenAIChatRequest, ProviderConfig, RouteConfig } from './types';
+import { Env, OpenAIChatRequest, ProviderConfig, ProviderResponse, RouteConfig } from './types';
 import { AnthropicRequest } from './anthropic-types';
 import { Router } from './router';
 import {
@@ -29,6 +29,8 @@ import {
   validateSettings,
   totalCapacity,
   sha256Hex,
+  hashPassword,
+  verifyPassword,
   Settings,
 } from './store';
 import {
@@ -39,6 +41,13 @@ import {
   wrapStreamForMetrics,
 } from './metrics';
 import { getAnalytics } from './analytics';
+import {
+  slotCounts,
+  joinQueue,
+  queueHeartbeat,
+  isQueueHead,
+  leaveQueue,
+} from './limiter';
 
 interface ClientIdentity {
   label: string;
@@ -101,7 +110,10 @@ export default {
         });
       }
 
-      // Admin API — separate ADMIN_TOKEN auth
+      // Admin API — separate ADMIN_TOKEN / user-session auth
+      if (path === '/admin/api/login' || path === '/admin/api/logout') {
+        return await handleLogin(request, env, path);
+      }
       if (path.startsWith('/admin/api/')) {
         return await handleAdmin(request, env, path);
       }
@@ -122,11 +134,7 @@ export default {
           path === '/anthropic/models' ||
           path === '/anthropic/v1/models')
       ) {
-        const router = new Router(env, await loadEffectiveRoutes(env, settings));
-        return json({
-          object: 'list',
-          data: router.getAvailableModels(),
-        });
+        return json({ object: 'list', data: await cachedModels(env, settings) });
       }
 
       // Image generation — POST only
@@ -189,19 +197,33 @@ export default {
 // =============================================================================
 
 async function handleAdmin(request: Request, env: Env, path: string): Promise<Response> {
-  if (!(await verifyAdmin(request, env))) {
+  const admin = await verifyAdminIdentity(request, env);
+  if (!admin) {
     throw new ProxyError('Admin unauthorized', 401, 'invalid_admin_auth');
+  }
+  const isAdmin = admin.role === 'admin' || admin.role === 'superuser';
+  const adminOnly =
+    (request.method === 'PUT' && path === '/admin/api/settings') ||
+    path.startsWith('/admin/api/users') ||
+    (request.method !== 'GET' && path.startsWith('/admin/api/models')) ||
+    path === '/admin/api/routes/reset';
+  if (adminOnly && !isAdmin) {
+    throw new ProxyError('Admin role required', 403, 'forbidden');
   }
 
   if (request.method === 'GET' && path === '/admin/api/overview') {
     const routes = await loadEffectiveRoutes(env);
-    const clientKeys = (await listClientKeys(env)).map(({ id, name, prefix, createdAt }) => ({
-      id,
-      name,
-      prefix,
-      createdAt,
-    }));
+    const clientKeys = (await listClientKeys(env))
+      .filter((k) => admin.role !== 'user' || (k.owner ?? 'Master') === admin.name)
+      .map(({ id, name, prefix, createdAt, owner }) => ({
+        id,
+        name,
+        prefix,
+        createdAt,
+        owner: owner ?? 'Master',
+      }));
     return json({
+      me: admin,
       routes,
       clientKeys,
       upstreamKeys: Object.fromEntries(
@@ -267,6 +289,7 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       },
     ];
     await saveRoutes(env, routes);
+    await invalidateModelsCache(env);
     return json({ ok: true, name, routes });
   }
 
@@ -278,17 +301,20 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
     }
     delete routes[name];
     await saveRoutes(env, routes);
+    await invalidateModelsCache(env);
+    await invalidateModelsCache(env);
     return json({ ok: true, name, routes });
   }
 
   if (request.method === 'POST' && path === '/admin/api/routes/reset') {
     await resetRoutes(env);
+    await invalidateModelsCache(env);
     return json({ ok: true, routes: await loadEffectiveRoutes(env) });
   }
 
   if (request.method === 'POST' && path === '/admin/api/keys') {
     const body = (await request.json()) as { name?: string };
-    const { record, plainKey } = await createClientKey(env, body.name ?? '');
+    const { record, plainKey } = await createClientKey(env, body.name ?? '', admin.name);
     return json(
       {
         ok: true,
@@ -306,6 +332,12 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
 
   if (request.method === 'DELETE' && path.startsWith('/admin/api/keys/')) {
     const id = decodeURIComponent(path.slice('/admin/api/keys/'.length));
+    if (admin.role === 'user') {
+      const owned = (await listClientKeys(env)).find((k) => k.id === id);
+      if (!owned || (owned.owner ?? 'Master') !== admin.name) {
+        throw new ProxyError('Key not found', 404);
+      }
+    }
     const deleted = await deleteClientKey(env, id);
     if (!deleted) {
       throw new ProxyError('Key not found', 404);
@@ -322,7 +354,7 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
     const settings = await loadSettings(env);
     return json({
       ...settings,
-      users: settings.users.map((u) => ({ name: u.name, createdAt: u.createdAt })),
+      users: settings.users.map((u) => ({ name: u.name, role: u.role, createdAt: u.createdAt })),
     });
   }
 
@@ -344,32 +376,68 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       ok: true,
       settings: {
         ...next,
-        users: next.users.map((u) => ({ name: u.name, createdAt: u.createdAt })),
+        users: next.users.map((u) => ({ name: u.name, role: u.role, createdAt: u.createdAt })),
       },
     });
   }
 
   if (request.method === 'POST' && path === '/admin/api/users') {
-    const body = (await request.json()) as { name?: string };
+    const body = (await request.json()) as { name?: string; password?: string; role?: string };
     const name = body.name?.trim();
     if (!name) throw new ProxyError('User name is required', 400);
+    const role = body.role === 'user' ? 'user' : 'admin';
     const settings = await loadSettings(env);
     if (settings.users.some((u) => u.name === name)) {
       throw new ProxyError('User already exists', 409);
     }
-    const plainToken = `admusr_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
-    settings.users.push({
+    const user: Settings['users'][number] = {
       name,
-      hash: await sha256Hex(plainToken),
+      role,
+      sessionVersion: 1,
       createdAt: new Date().toISOString(),
-    });
+    };
+    let plainToken: string | undefined;
+    if (body.password) {
+      if (body.password.length < 8) throw new ProxyError('Password must be at least 8 characters', 400);
+      user.passwordHash = await hashPassword(body.password);
+    } else {
+      plainToken = `admusr_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+      user.hash = await sha256Hex(plainToken);
+    }
+    settings.users.push(user);
     await saveSettings(env, settings);
-    return json({ ok: true, token: plainToken, user: { name } }, 201);
+    return json({ ok: true, token: plainToken, user: { name, role } }, 201);
+  }
+
+  if (request.method === 'POST' && /^\/admin\/api\/users\/[^/]+\/password$/.test(path)) {
+    const name = decodeURIComponent(path.slice('/admin/api/users/'.length, -'/password'.length));
+    const body = (await request.json()) as { password?: string };
+    if (!body.password || body.password.length < 8) {
+      throw new ProxyError('Password must be at least 8 characters', 400);
+    }
+    const settings = await loadSettings(env);
+    const target = settings.users.find((u) => u.name === name);
+    if (!target) throw new ProxyError('User not found', 404);
+    if (target.role === 'superuser' && admin.name !== target.name) {
+      throw new ProxyError('The superuser password can only be changed by the superuser', 403);
+    }
+    target.passwordHash = await hashPassword(body.password);
+    target.sessionVersion += 1; // changing a password logs the user's other sessions out
+    await saveSettings(env, settings);
+    return json({ ok: true, name });
   }
 
   if (request.method === 'DELETE' && path.startsWith('/admin/api/users/')) {
     const name = decodeURIComponent(path.slice('/admin/api/users/'.length));
     const settings = await loadSettings(env);
+    const target = settings.users.find((u) => u.name === name);
+    if (target?.role === 'superuser') {
+      throw new ProxyError('The superuser cannot be deleted', 403);
+    }
+    // Deleting a user revokes their client keys and pulls their NIM keys from their pool view.
+    for (const key of await listClientKeys(env)) {
+      if ((key.owner ?? 'Master') === name) await deleteClientKey(env, key.id);
+    }
     const before = settings.users.length;
     settings.users = settings.users.filter((u) => u.name !== name);
     if (settings.users.length === before) throw new ProxyError('User not found', 404);
@@ -597,7 +665,7 @@ async function handleChatCompletion(
 ): Promise<Response> {
   const startedAt = Date.now();
   const body = await request.json();
-  const chatRequest = body as OpenAIChatRequest;
+  const chatRequest = body as OpenAIChatRequest & { user?: string; conversation_id?: string };
 
   if (!chatRequest.messages || !Array.isArray(chatRequest.messages)) {
     throw new ProxyError('Invalid request: messages array is required', 400);
@@ -606,10 +674,43 @@ async function handleChatCompletion(
     throw new ProxyError('Invalid request: model is required', 400);
   }
   if (settings.maxTokensCap > 0) {
-    chatRequest.max_tokens = Math.min(
-      chatRequest.max_tokens ?? settings.maxTokensCap,
-      settings.maxTokensCap
-    );
+    chatRequest.max_tokens = Math.min(chatRequest.max_tokens ?? settings.maxTokensCap, settings.maxTokensCap);
+  }
+
+  // Optional absolute deadline for the whole request (queue + retries + upstream).
+  const deadlineHeader = Number(request.headers.get('X-Nim-Proxy-Deadline-Ms') ?? '');
+  const overallDeadline =
+    Number.isFinite(deadlineHeader) && deadlineHeader > 0 ? startedAt + deadlineHeader : startedAt + 300_000;
+  const queueDeadline = Math.min(
+    overallDeadline,
+    startedAt + (settings.maxWaitSec > 0 ? settings.maxWaitSec * 1000 : 120_000)
+  );
+
+  // Sticky conversation: prefer the key this conversation used last time.
+  const conversationSeed =
+    request.headers.get('X-Conversation-Id') ??
+    request.headers.get('X-Session-Id') ??
+    chatRequest.conversation_id ??
+    chatRequest.user ??
+    `${identity.label}:${JSON.stringify(chatRequest.messages[0]?.content ?? '').slice(0, 200)}`;
+  const stickyId = await sha256Hex(`${identity.label}|${conversationSeed}`);
+  let stickyKey = '';
+  try {
+    stickyKey = (await env.ADMIN_KV?.get(`sticky:${stickyId}`)) ?? '';
+  } catch {
+    stickyKey = '';
+  }
+
+  // stream_options injection for exact usage (one retry untouched if rejected).
+  const noInjectModels = await loadNoInjectModels(env);
+  let injected = false;
+  if (
+    chatRequest.stream &&
+    !settings.strictPassthrough &&
+    !noInjectModels.includes(chatRequest.model)
+  ) {
+    chatRequest.stream_options = { include_usage: true };
+    injected = true;
   }
 
   const baseMetric = {
@@ -634,87 +735,206 @@ async function handleChatCompletion(
   const record = (partial: Record<string, unknown>) =>
     recordMetric(env, { ...baseMetric, ...partial } as never, settings.retentionDays);
 
-  // Model governor: per-model RPM limit from Settings engages before upstream.
+  // Model governor: hard per-model RPM limit from Settings.
   const limit = settings.modelLimits[chatRequest.model];
   if (limit && limit > 0 && (await routeUsageLastMinute(env, chatRequest.model)) >= limit) {
-    ctx.waitUntil(
-      record({
-        status: 429,
-        outcome: 'governor',
-        errorClass: 'rate_limit',
-        latencyMs: Date.now() - startedAt,
-        ttftMs: 0,
-        generationMs: 0,
-      })
-    );
+    ctx.waitUntil(record({ status: 429, outcome: 'governor', errorClass: 'rate_limit', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
     throw new ProxyError(`Model limit reached for ${chatRequest.model} (${limit}/min)`, 429);
   }
 
+  // Model pressure: a model that exhausted its own worker pool backs off
+  // adaptively instead of burning healthy keys on failover attempts.
+  const pressure = await loadModelPressure(env, chatRequest.model);
+  if (pressure && pressure.until > Date.now()) {
+    const waitMs = pressure.until - Date.now();
+    if (waitMs > queueDeadline - Date.now()) {
+      ctx.waitUntil(record({ status: 503, outcome: 'model_pressure', errorClass: 'upstream_5xx', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
+      throw new ProxyError(`Model ${chatRequest.model} is under pressure, retry after ${Math.ceil(waitMs / 1000)}s`, 503);
+    }
+    await sleep(waitMs);
+  }
+
+  const attempt = async (): Promise<ProviderResponse> => {
+    const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+      settings,
+      keyUsage: await slotCounts(env),
+      stickyKey,
+    });
+    return router.executeWithFallback(chatRequest, 'openai');
+  };
+
+  const executeQueued = async (
+    onWait?: () => void
+  ): Promise<ProviderResponse> => {
+    const ticket = await joinQueue(env, identity.label, chatRequest.model);
+    try {
+      let upstreamRetries = 0;
+      for (;;) {
+        await queueHeartbeat(env, ticket);
+        if (await isQueueHead(env, ticket)) {
+          let response = await attempt();
+          // Injection rejected upstream: remember the model, retry untouched once.
+          if (
+            injected &&
+            !response.success &&
+            (response.error ?? '').toString().toLowerCase().includes('stream_options')
+          ) {
+            await rememberNoInjectModel(env, chatRequest.model);
+            delete chatRequest.stream_options;
+            injected = false;
+            response = await attempt();
+          }
+          if (response.windowFull) {
+            // All keys inside their window: queue, do not fail.
+          } else if (
+            !response.success &&
+            chatRequest.stream &&
+            [429, 500, 502, 503, 504].includes(response.statusCode ?? 0) &&
+            Date.now() < queueDeadline &&
+            upstreamRetries < 20
+          ) {
+            // Ride out upstream errors between keys while the client waits.
+            upstreamRetries++;
+            await noteModelPressure(env, chatRequest.model, response.statusCode ?? 503);
+          } else {
+            return response;
+          }
+        }
+        if (Date.now() >= queueDeadline || Date.now() >= overallDeadline) {
+          return {
+            success: false,
+            error: 'Timed out waiting for an upstream key slot',
+            statusCode: 429,
+            windowFull: true,
+          };
+        }
+        onWait?.();
+        await sleep(450);
+      }
+    } catch (error) {
+      // Unknown-model etc.: count it, then rethrow for the normal error mapping.
+      const status = error instanceof ProxyError ? error.statusCode : 500;
+      ctx.waitUntil(record({
+        status, outcome: 'upstream_error', errorClass: errorClassForStatus(status),
+        latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
+      }));
+      throw error;
+    } finally {
+      await leaveQueue(env, ticket);
+    }
+  };
+
+  const rememberSticky = (response: ProviderResponse) => {
+    if (response.keyUsed && env.ADMIN_KV) {
+      ctx.waitUntil(
+        env.ADMIN_KV.put(`sticky:${stickyId}`, response.keyUsed, { expirationTtl: 3600 }).catch(() => undefined)
+      );
+    }
+  };
+
+  const finishSuccess = (response: ProviderResponse) => {
+    rememberSticky(response);
+    void clearModelPressure(env, chatRequest.model);
+    const latencyMs = Date.now() - startedAt;
+    const usage = (response.response as { usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } } | undefined)?.usage;
+    const choice = response.response?.choices?.[0];
+    ctx.waitUntil(record({
+      status: 200, outcome: 'success', errorClass: 'none',
+      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
+      latencyMs, ttftMs: latencyMs, generationMs: 0,
+      promptTokens: usage?.prompt_tokens ?? 0,
+      completionTokens: usage?.completion_tokens ?? 0,
+      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      toolCalls: choice?.message?.tool_calls?.length ?? 0,
+      truncated: choice?.finish_reason === 'length' ? 1 : 0,
+    }));
+  };
+
+  const finishFailure = (response: ProviderResponse) => {
+    const status = response.statusCode || 500;
+    if ([429, 503].includes(status) && !response.windowFull) {
+      void noteModelPressure(env, chatRequest.model, status);
+    }
+    ctx.waitUntil(record({
+      status, outcome: response.windowFull ? 'window_full' : 'upstream_error',
+      errorClass: errorClassForStatus(status),
+      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
+      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
+    }));
+  };
+
   console.log(`[Worker] model=${chatRequest.model} stream=${chatRequest.stream || false}`);
 
-  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
-    settings,
-    keyUsage: await keyUsageLastMinute(env),
-  });
-  let response;
-  try {
-    response = await router.executeWithFallback(chatRequest, 'openai');
-  } catch (error) {
-    const status = error instanceof ProxyError ? error.statusCode : 500;
-    ctx.waitUntil(
-      record({
-        status,
-        outcome: 'upstream_error',
-        errorClass: errorClassForStatus(status),
-        latencyMs: Date.now() - startedAt,
-        ttftMs: Date.now() - startedAt,
-        generationMs: 0,
-      })
-    );
-    throw error;
-  }
-  const latencyMs = Date.now() - startedAt;
-
-  if (!response.success) {
-    const status = response.statusCode || 500;
-    ctx.waitUntil(
-      record({
-        status,
-        outcome: 'upstream_error',
-        errorClass: errorClassForStatus(status),
-        upstreamModel: response.upstreamModel ?? '',
-        upstreamKey: response.keyUsed ?? '',
-        latencyMs,
-        ttftMs: latencyMs,
-        generationMs: 0,
-      })
-    );
-    throw new ProxyError(response.error || 'All providers failed', status);
-  }
-
-  if (response.stream) {
-    const wrapped = wrapStreamForMetrics(
-      response.stream,
-      (stats, totalMs) => {
-        void record({
-          status: 200,
-          outcome: 'success',
-          errorClass: 'none',
-          upstreamModel: stats.upstreamModel || response.upstreamModel || '',
-          upstreamKey: response.keyUsed ?? '',
-          latencyMs: totalMs,
-          ttftMs: stats.ttftMs || totalMs,
-          generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
-          promptTokens: stats.promptTokens,
-          completionTokens: stats.completionTokens,
-          reasoningTokens: stats.reasoningTokens,
-          toolCalls: stats.toolCalls,
-          truncated: stats.truncated,
-        });
+  if (chatRequest.stream) {
+    // Commit to the SSE stream immediately; heartbeat comments keep every
+    // OpenAI client happy while we queue or ride out upstream errors.
+    const encoder = new TextEncoder();
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    const readable = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (text: string) => {
+          try { controller.enqueue(encoder.encode(text)); } catch { /* client gone */ }
+        };
+        heartbeat = setInterval(() => send(': heartbeat\n\n'), Math.max(settings.heartbeatSec, 1) * 1000);
+        try {
+          const response = await executeQueued();
+          if (heartbeat) clearInterval(heartbeat);
+          if (!response.success || !response.stream) {
+            finishFailure(response);
+            const status = response.statusCode || 500;
+            send(`data: ${JSON.stringify({ error: { message: response.error || 'All providers failed', type: 'proxy_error', code: status } })}\n\n`);
+            send(`data: ${JSON.stringify({ id: 'chatcmpl-error', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: chatRequest.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+            send('data: [DONE]\n\n');
+            controller.close();
+            return;
+          }
+          rememberSticky(response);
+          void clearModelPressure(env, chatRequest.model);
+          const wrapped = wrapStreamForMetrics(response.stream, (stats, totalMs) => {
+            void record({
+              status: 200, outcome: 'success', errorClass: 'none',
+              upstreamModel: stats.upstreamModel || response.upstreamModel || '',
+              upstreamKey: response.keyUsed ?? '',
+              latencyMs: totalMs, ttftMs: stats.ttftMs || totalMs,
+              generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
+              promptTokens: stats.promptTokens, completionTokens: stats.completionTokens,
+              reasoningTokens: stats.reasoningTokens, toolCalls: stats.toolCalls,
+              truncated: stats.truncated,
+            });
+          }, startedAt);
+          // Idle guard: cut streams that stall mid-generation.
+          const reader = wrapped.getReader();
+          const idleMs = Math.max(settings.streamIdleSec, 5) * 1000;
+          for (;;) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const chunk = await Promise.race([
+              reader.read(),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error('stream idle timeout')), idleMs);
+              }),
+            ]).finally(() => { if (timer) clearTimeout(timer); });
+            if (chunk.done) break;
+            controller.enqueue(chunk.value);
+            if (Date.now() >= overallDeadline) {
+              await reader.cancel('deadline exceeded');
+              break;
+            }
+          }
+          controller.close();
+        } catch (error) {
+          if (heartbeat) clearInterval(heartbeat);
+          try {
+            send(`data: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : 'Stream failed', type: 'proxy_error' } })}\n\n`);
+            send('data: [DONE]\n\n');
+            controller.close();
+          } catch { /* already closed */ }
+        }
       },
-      startedAt
-    );
-    return new Response(wrapped, {
+      cancel() {
+        if (heartbeat) clearInterval(heartbeat);
+      },
+    });
+    return new Response(readable, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -724,36 +944,80 @@ async function handleChatCompletion(
     });
   }
 
-  const usage = (
-    response.response as
-      | {
-          usage?: {
-            prompt_tokens?: number;
-            completion_tokens?: number;
-            completion_tokens_details?: { reasoning_tokens?: number };
-          };
-        }
-      | undefined
-  )?.usage;
-  const choice = response.response?.choices?.[0];
-  ctx.waitUntil(
-    record({
-      status: 200,
-      outcome: 'success',
-      errorClass: 'none',
-      upstreamModel: response.upstreamModel ?? '',
-      upstreamKey: response.keyUsed ?? '',
-      latencyMs,
-      ttftMs: latencyMs,
-      generationMs: 0,
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
-      toolCalls: choice?.message?.tool_calls?.length ?? 0,
-      truncated: choice?.finish_reason === 'length' ? 1 : 0,
-    })
-  );
+  const response = await executeQueued();
+  if (!response.success) {
+    finishFailure(response);
+    throw new ProxyError(response.error || 'All providers failed', response.statusCode || 500);
+  }
+  if (response.stream) {
+    // Non-streaming client but provider returned a stream (should not happen).
+    return new Response(response.stream, {
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...CORS_HEADERS },
+    });
+  }
+  finishSuccess(response);
   return json(response.response);
+}
+
+function sleep(msDelay: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, msDelay));
+}
+
+async function loadNoInjectModels(env: Env): Promise<string[]> {
+  try {
+    const raw = await env.ADMIN_KV?.get('no_usage_injection');
+    const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function rememberNoInjectModel(env: Env, model: string): Promise<void> {
+  try {
+    const models = await loadNoInjectModels(env);
+    if (!models.includes(model)) {
+      models.push(model);
+      await env.ADMIN_KV?.put('no_usage_injection', JSON.stringify(models));
+    }
+  } catch {
+    // Injection memory is an optimisation; never fail a request over it.
+  }
+}
+
+interface ModelPressure { until: number; level: number }
+
+async function loadModelPressure(env: Env, route: string): Promise<ModelPressure | null> {
+  try {
+    const raw = await env.ADMIN_KV?.get(`pressure:${route}`);
+    return raw ? (JSON.parse(raw) as ModelPressure) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function noteModelPressure(env: Env, route: string, status: number): Promise<void> {
+  if (![429, 503].includes(status)) return;
+  try {
+    const current = await loadModelPressure(env, route);
+    const level = Math.min((current?.level ?? 0) + 1, 5);
+    const backoffSec = Math.min(300, 15 * 2 ** (level - 1));
+    await env.ADMIN_KV?.put(
+      `pressure:${route}`,
+      JSON.stringify({ until: Date.now() + backoffSec * 1000, level } satisfies ModelPressure),
+      { expirationTtl: 900 }
+    );
+  } catch {
+    // Pressure tracking is best-effort.
+  }
+}
+
+async function clearModelPressure(env: Env, route: string): Promise<void> {
+  try {
+    await env.ADMIN_KV?.delete(`pressure:${route}`);
+  } catch {
+    // best-effort
+  }
 }
 
 // =============================================================================
@@ -914,6 +1178,56 @@ async function handleAnthropicConversionPath(
 }
 
 // =============================================================================
+// Model catalog cache (single-flight, TTL from Settings)
+// =============================================================================
+
+let modelsFlight: Promise<Array<{ id: string; object: string; owned_by: string; permission: string[] }>> | null = null;
+
+async function cachedModels(
+  env: Env,
+  settings: Settings
+): Promise<Array<{ id: string; object: string; owned_by: string; permission: string[] }>> {
+  const ttlMs = Math.max(settings.modelsTtlMin, 0) * 60_000;
+  if (ttlMs > 0 && env.ADMIN_KV) {
+    try {
+      const raw = await env.ADMIN_KV.get('models_cache');
+      if (raw) {
+        const cached = JSON.parse(raw) as { at: number; data: ReturnType<Router['getAvailableModels']> };
+        if (Date.now() - cached.at < ttlMs) return cached.data;
+      }
+    } catch {
+      // Cache is an optimisation; fall through to a fresh build.
+    }
+  }
+  if (!modelsFlight) {
+    modelsFlight = (async () => {
+      const router = new Router(env, await loadEffectiveRoutes(env, settings));
+      const data = router.getAvailableModels();
+      if (ttlMs > 0 && env.ADMIN_KV) {
+        try {
+          await env.ADMIN_KV.put('models_cache', JSON.stringify({ at: Date.now(), data }));
+        } catch {
+          // best effort
+        }
+      }
+      return data;
+    })().finally(() => {
+      modelsFlight = null;
+    });
+  }
+  return modelsFlight;
+}
+
+async function invalidateModelsCache(env: Env): Promise<void> {
+  modelsFlight = null;
+  try {
+    await env.ADMIN_KV?.delete('models_cache');
+  } catch {
+    // best effort
+  }
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
@@ -954,20 +1268,85 @@ async function verifyAuth(
   return null;
 }
 
-async function verifyAdmin(request: Request, env: Env): Promise<boolean> {
+interface AdminIdentity {
+  name: string;
+  role: 'superuser' | 'admin' | 'user';
+}
+
+async function verifyAdminIdentity(request: Request, env: Env): Promise<AdminIdentity | null> {
   const token = request.headers.get('x-admin-token') ?? extractToken(request);
-  if (!token) return false;
-  if (env.ADMIN_TOKEN && constantTimeEqual(token, env.ADMIN_TOKEN)) return true;
-  // Dashboard users from Settings (tokens stored hashed)
+  if (token && env.ADMIN_TOKEN && constantTimeEqual(token, env.ADMIN_TOKEN)) {
+    return { name: 'Superuser', role: 'superuser' };
+  }
   const settings = await loadSettings(env);
-  if (settings.users.length) {
+  if (token && settings.users.length) {
     const hash = await sha256Hex(token);
-    if (settings.users.some((u) => u.hash === hash)) return true;
+    const byToken = settings.users.find((u) => u.hash && u.hash === hash);
+    if (byToken) return { name: byToken.name, role: byToken.role };
   }
-  if (!env.ADMIN_TOKEN && settings.users.length === 0) {
-    console.error('[verifyAdmin] ADMIN_TOKEN not configured — rejecting admin requests');
+  // Signed-in session cookie (username + password login)
+  const cookie = request.headers.get('Cookie') ?? '';
+  const match = /(?:^|;\s*)blg_session=([a-f0-9]+)/.exec(cookie);
+  if (match && env.ADMIN_KV) {
+    try {
+      const raw = await env.ADMIN_KV.get(`session:${match[1]}`);
+      if (raw) {
+        const session = JSON.parse(raw) as { name: string; sessionVersion: number; expires: number };
+        const user = settings.users.find((u) => u.name === session.name);
+        if (user && session.expires > Date.now() && session.sessionVersion === user.sessionVersion) {
+          return { name: user.name, role: user.role };
+        }
+      }
+    } catch {
+      // Invalid session cookie: fall through to unauthorized.
+    }
   }
-  return false;
+  return null;
+}
+
+async function handleLogin(request: Request, env: Env, path: string): Promise<Response> {
+  if (request.method === 'POST' && path === '/admin/api/login') {
+    const body = (await request.json()) as { name?: string; password?: string };
+    const settings = await loadSettings(env);
+    const user = settings.users.find((u) => u.name === body.name?.trim());
+    if (!user?.passwordHash || !(await verifyPassword(body.password ?? '', user.passwordHash))) {
+      throw new ProxyError('Invalid username or password', 401, 'invalid_login');
+    }
+    if (!env.ADMIN_KV) throw new ProxyError('Sessions not available (KV missing)', 500);
+    const sessionId = [...crypto.getRandomValues(new Uint8Array(24))]
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    const expires = Date.now() + 7 * 86_400_000;
+    await env.ADMIN_KV.put(
+      `session:${sessionId}`,
+      JSON.stringify({ name: user.name, sessionVersion: user.sessionVersion, expires }),
+      { expirationTtl: 7 * 86_400 }
+    );
+    const proto = request.headers.get('X-Forwarded-Proto') ?? new URL(request.url).protocol.replace(':', '');
+    const secure = proto === 'https' ? '; Secure' : '';
+    return new Response(JSON.stringify({ ok: true, user: { name: user.name, role: user.role } }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': `blg_session=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 86_400}${secure}`,
+        ...CORS_HEADERS,
+      },
+    });
+  }
+  if (request.method === 'POST' && path === '/admin/api/logout') {
+    const cookie = request.headers.get('Cookie') ?? '';
+    const match = /(?:^|;\s*)blg_session=([a-f0-9]+)/.exec(cookie);
+    if (match) {
+      try { await env.ADMIN_KV?.delete(`session:${match[1]}`); } catch { /* best effort */ }
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': 'blg_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+        ...CORS_HEADERS,
+      },
+    });
+  }
+  throw new ProxyError('Not found', 404);
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

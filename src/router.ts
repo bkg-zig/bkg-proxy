@@ -93,7 +93,7 @@ export class Router {
       );
 
       try {
-        const manager = new TokenManager(config, this.env, this.runtime);
+        const manager = new TokenManager(config, this.env, { ...this.runtime, route: request.model });
         const response = await manager.executeWithRotation(request);
 
         response.upstreamModel = config.model;
@@ -102,6 +102,9 @@ export class Router {
           return response;
         }
 
+        if (response.windowFull) {
+          return response;
+        }
         lastError = response.error;
         if (response.statusCode) {
           lastStatusCode = response.statusCode;

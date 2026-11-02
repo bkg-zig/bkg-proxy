@@ -1,6 +1,7 @@
 import { Env } from './types';
 import { Settings, totalCapacity, UPSTREAM_KEY_NAMES } from './store';
 import { ensureSchema } from './metrics';
+import { queueLength } from './limiter';
 
 export interface RangeSelection {
   from: number;
@@ -313,13 +314,30 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
           key: name,
           present: Boolean(env[name]),
           enabled: settings.keyEnabled[name] !== false,
-          rpmLimit: settings.keyRpm[name] ?? 60,
+          rpmLimit: settings.keyRpm[name] ?? 40,
           lastMinute: Number(minuteRow?.c ?? 0),
           rangeRequests: Number(rangeRow?.c ?? 0),
           range429: Number(rangeRow?.rate429 ?? 0),
         };
       }),
     },
+    queue: { waiting: await queueLength(env) },
+    modelPressure: await (async () => {
+      try {
+        if (!env.ADMIN_KV) return [];
+        const list = await env.ADMIN_KV.list({ prefix: 'pressure:' });
+        const out: Array<{ route: string; until: number; level: number }> = [];
+        for (const key of list.keys) {
+          const raw = await env.ADMIN_KV.get(key.name);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw) as { until: number; level: number };
+          if (parsed.until > Date.now()) out.push({ route: key.name.slice('pressure:'.length), ...parsed });
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    })(),
     history: {
       rows: historyCount,
       approxBytes: historyCount * 180,

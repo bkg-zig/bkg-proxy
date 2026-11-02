@@ -2,10 +2,14 @@ import { ProviderConfig, Env, OpenAIChatRequest, ProviderResponse } from './type
 import { createProvider } from './providers';
 import { isRetryableError, shouldRotateKey, withTimeout } from './utils/error-handler';
 import { Settings } from './store';
+import { tryAcquireKey } from './limiter';
 
 export interface TokenRuntime {
   settings?: Settings;
   keyUsage?: Record<string, number>;
+  /** Preferred key name for this conversation (sticky prefix cache). */
+  stickyKey?: string;
+  route?: string;
 }
 
 export class TokenManager {
@@ -23,6 +27,18 @@ export class TokenManager {
     const provider = createProvider(this.config, this.env);
     const apiKeyPairs = this.getApiKeyPairs();
     const apiKeys = apiKeyPairs.map((p) => p.value);
+
+    if (apiKeys.length === 0 && (this.config.apiKeys?.length ?? 0) > 0 && this.runtime?.settings) {
+      // Keys exist but every one is disabled or inside its sliding window:
+      // that is a queueing signal, never a keyless upstream attempt.
+      return {
+        success: false,
+        error: 'All upstream keys are inside their sliding rate window',
+        statusCode: 429,
+        keyUsed: '',
+        windowFull: true,
+      };
+    }
 
     if (apiKeys.length === 0) {
       // Cloudflare AI uses a binding instead of API keys; *-compatible providers may
@@ -47,9 +63,22 @@ export class TokenManager {
     let lastError: any = null;
     let lastStatusCode: number | undefined;
 
-    // Try each API key in order
+    // Try each API key in order (sticky first, then least loaded).
+    // Every attempt first reserves an exact sliding-window slot for that key;
+    // keys whose window is full are skipped without touching the upstream.
+    let anySlot = false;
     for (let i = 0; i < apiKeys.length; i++) {
       const apiKey = apiKeys[i];
+      const settings = this.runtime?.settings;
+      if (settings) {
+        const keyName = apiKeyPairs[i]?.name ?? '';
+        const rpm = settings.keyRpm[keyName] ?? 40;
+        const granted = await tryAcquireKey(this.env, keyName, rpm, this.runtime?.route ?? this.config.model);
+        if (!granted) {
+          continue;
+        }
+        anySlot = true;
+      }
       try {
         console.log(
           `[TokenManager] Trying ${this.config.provider}/${this.config.model} with key ${i + 1}/${apiKeys.length}`
@@ -94,6 +123,15 @@ export class TokenManager {
       }
     }
 
+    if (this.runtime?.settings && !anySlot && apiKeyPairs.length > 0) {
+      return {
+        success: false,
+        error: 'All upstream keys are inside their sliding rate window',
+        statusCode: 429,
+        keyUsed: '',
+        windowFull: true,
+      };
+    }
     // All keys failed
     return {
       success: false,
@@ -130,6 +168,14 @@ export class TokenManager {
       pairs.push({ name: keyName, value: keyValue });
     }
 
+    const sticky = this.runtime?.stickyKey;
+    pairs.sort((a, b) => {
+      if (sticky) {
+        if (a.name === sticky && b.name !== sticky) return -1;
+        if (b.name === sticky && a.name !== sticky) return 1;
+      }
+      return (usage[a.name] ?? 0) - (usage[b.name] ?? 0);
+    });
     return pairs;
   }
 }
