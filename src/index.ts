@@ -47,7 +47,6 @@ interface ClientIdentity {
   label: string;
   kind: string;
 }
-import { dashboardHtml } from './dashboard';
 import { createAudioStream, getVoices, DEFAULT_VOICE } from './tts/tts';
 
 const CORS_HEADERS: Record<string, string> = {
@@ -97,11 +96,35 @@ export default {
         });
       }
 
-      // Admin dashboard page — the page itself is public, all data/actions need ADMIN_TOKEN
-      if ((path === '/dashboard' || path === '/admin') && request.method === 'GET') {
-        return new Response(dashboardHtml(), {
-          headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
-        });
+      // React studio frontend — the page itself is public, all data/actions need auth.
+      // On studio.eysho.info the app lives directly on the domain (no /dashboard),
+      // the API stays on api.eysho.info under /v1. /dashboard keeps working elsewhere.
+      const isStudioHost = url.hostname === 'studio.eysho.info';
+      const isApiPath =
+        path.startsWith('/v1/') ||
+        path.startsWith('/admin/') ||
+        path.startsWith('/anthropic') ||
+        path === '/health' ||
+        path === '/tts' ||
+        path === '/voices';
+      if (
+        request.method === 'GET' &&
+        (path === '/dashboard' ||
+          path.startsWith('/dashboard/') ||
+          path.startsWith('/assets/') ||
+          (isStudioHost && !isApiPath))
+      ) {
+        if (!env.ASSETS) {
+          return new Response('Frontend not built. Run: npm run build:web', { status: 503 });
+        }
+        const assetUrl = new URL(request.url);
+        assetUrl.pathname = path.startsWith('/dashboard/')
+          ? path.slice('/dashboard'.length)
+          : path === '/dashboard' || (isStudioHost && !path.startsWith('/assets/'))
+            ? '/'
+            : path;
+        if (assetUrl.pathname === '') assetUrl.pathname = '/';
+        return env.ASSETS.fetch(new Request(assetUrl, request));
       }
 
       // Admin API — separate ADMIN_TOKEN / user-session auth

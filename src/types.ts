@@ -125,6 +125,7 @@ export interface RouteConfig {
 export interface Env {
   AI?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   ADMIN_KV?: KVNamespace;
+  ASSETS?: Fetcher;
   DB?: D1Database;
   ADMIN_TOKEN?: string;
   PROXY_AUTH_TOKEN: string;

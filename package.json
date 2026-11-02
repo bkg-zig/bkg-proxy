@@ -5,11 +5,12 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build:web && wrangler deploy",
     "lint": "eslint src",
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
-    "check": "tsc --noEmit && eslint src"
+    "check": "tsc --noEmit && eslint src",
+    "build:web": "npm --prefix web run build"
   },
   "keywords": [
     "cloudflare",
