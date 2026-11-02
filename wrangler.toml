@@ -11,6 +11,12 @@ binding = "AI"
 binding = "ADMIN_KV"
 id = "36c99f9286a94318916afca4281716eb"
 
+# Request metrics history for the analytics dashboard
+[[d1_databases]]
+binding = "DB"
+database_name = "blg-metrics"
+database_id = "c2a37613-0407-40eb-8d59-85400c76ce97"
+
 # Cloudflare dashboard logs (optional)
 [observability]
 enabled = false

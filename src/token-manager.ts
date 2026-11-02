@@ -1,11 +1,18 @@
 import { ProviderConfig, Env, OpenAIChatRequest, ProviderResponse } from './types';
 import { createProvider } from './providers';
 import { isRetryableError, shouldRotateKey, withTimeout } from './utils/error-handler';
+import { Settings } from './store';
+
+export interface TokenRuntime {
+  settings?: Settings;
+  keyUsage?: Record<string, number>;
+}
 
 export class TokenManager {
   constructor(
     private config: ProviderConfig,
-    private env: Env
+    private env: Env,
+    private runtime?: TokenRuntime
   ) {}
 
   /**
@@ -14,7 +21,8 @@ export class TokenManager {
    */
   async executeWithRotation(request: OpenAIChatRequest): Promise<ProviderResponse> {
     const provider = createProvider(this.config, this.env);
-    const apiKeys = this.getApiKeys();
+    const apiKeyPairs = this.getApiKeyPairs();
+    const apiKeys = apiKeyPairs.map((p) => p.value);
 
     if (apiKeys.length === 0) {
       // Cloudflare AI uses a binding instead of API keys; *-compatible providers may
@@ -49,6 +57,7 @@ export class TokenManager {
 
         const timeoutMs = Number(this.env.PROVIDER_TIMEOUT_MS) || undefined;
         const response = await withTimeout(provider.chat(request, apiKey), timeoutMs);
+        response.keyUsed = apiKeyPairs[i]?.name ?? '';
 
         if (response.success) {
           console.log(`[TokenManager] Success with key ${i + 1}/${apiKeys.length}`);
@@ -90,21 +99,37 @@ export class TokenManager {
       success: false,
       error: lastError?.message || lastError || 'All API keys failed',
       statusCode: lastStatusCode ?? 500,
+      keyUsed: apiKeyPairs[apiKeyPairs.length - 1]?.name ?? '',
     };
   }
 
-  private getApiKeys(): string[] {
-    const keys: string[] = [];
+  private getApiKeyPairs(): Array<{ name: string; value: string }> {
+    const pairs: Array<{ name: string; value: string }> = [];
+    const settings = this.runtime?.settings;
+    const usage = this.runtime?.keyUsage ?? {};
 
     for (const keyName of this.config.apiKeys ?? []) {
       const keyValue = this.env[keyName];
-      if (keyValue) {
-        keys.push(keyValue);
-      } else {
+      if (!keyValue) {
         console.warn(`[TokenManager] API key not found in env: ${keyName}`);
+        continue;
       }
+      // Settings: disabled keys and keys at their per-minute limit are skipped live.
+      if (settings && settings.keyEnabled[keyName] === false) {
+        continue;
+      }
+      if (settings) {
+        const rpm = settings.keyRpm[keyName];
+        if (rpm !== undefined && rpm > 0 && (usage[keyName] ?? 0) >= rpm) {
+          continue;
+        }
+        if (rpm !== undefined && rpm === 0) {
+          continue;
+        }
+      }
+      pairs.push({ name: keyName, value: keyValue });
     }
 
-    return keys;
+    return pairs;
   }
 }

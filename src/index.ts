@@ -23,8 +23,18 @@ import {
   listClientKeys,
   createClientKey,
   deleteClientKey,
-  isClientKey,
+  findClientKey,
+  loadSettings,
+  saveSettings,
+  validateSettings,
+  totalCapacity,
+  sha256Hex,
+  Settings,
 } from './store';
+import { recordMetric, keyUsageLastMinute, routeUsageLastMinute, errorClassForStatus, wrapStreamForMetrics } from './metrics';
+import { getAnalytics } from './analytics';
+
+interface ClientIdentity { label: string; kind: string }
 import { dashboardHtml } from './dashboard';
 import { createAudioStream, getVoices, DEFAULT_VOICE } from './tts/tts';
 
@@ -56,7 +66,7 @@ const IMAGE_MODELS: Record<string, { id: string; contentType: string } | 'pollin
 };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS_HEADERS });
     }
@@ -88,9 +98,12 @@ export default {
       }
 
       // Everything below requires auth (master token or dashboard-created client key)
-      if (!(await verifyAuth(request, env))) {
+      const settings = await loadSettings(env);
+      const identity = await verifyAuth(request, env, settings);
+      if (!identity) {
         throw new ProxyError('Unauthorized', 401, 'invalid_auth');
       }
+      const agent = (request.headers.get('User-Agent') ?? '').slice(0, 120);
 
       // Models list (requires auth, matching OpenAI behavior)
       if (
@@ -100,7 +113,7 @@ export default {
           path === '/anthropic/models' ||
           path === '/anthropic/v1/models')
       ) {
-        const router = new Router(env, await loadEffectiveRoutes(env));
+        const router = new Router(env, await loadEffectiveRoutes(env, settings));
         return json({
           object: 'list',
           data: router.getAvailableModels(),
@@ -109,12 +122,12 @@ export default {
 
       // Image generation — POST only
       if (request.method === 'POST' && path === '/v1/images/generations') {
-        return await handleImageGeneration(request, env);
+        return await handleImageGeneration(request, env, identity, agent, settings, ctx);
       }
 
       // Speech (Microsoft Edge TTS) — OpenAI-style and upstream-style
       if (request.method === 'POST' && (path === '/v1/audio/speech' || path === '/tts')) {
-        return await handleSpeech(request);
+        return await handleSpeech(request, env, identity, agent, settings, ctx);
       }
       if (request.method === 'GET' && (path === '/v1/audio/voices' || path === '/voices')) {
         try {
@@ -138,7 +151,7 @@ export default {
         request.method === 'POST' &&
         (path === '/anthropic/v1/messages' || path === '/anthropic/messages')
       ) {
-        return await handleAnthropicChat(request, env);
+        return await handleAnthropicChat(request, env, identity, agent, settings, ctx);
       }
 
       // OpenAI-format chat completions — POST only
@@ -146,7 +159,7 @@ export default {
         request.method === 'POST' &&
         (path === '/' || path === '/v1/chat/completions' || path === '/chat/completions')
       ) {
-        return await handleChatCompletion(request, env);
+        return await handleChatCompletion(request, env, identity, agent, settings, ctx);
       }
 
       throw new ProxyError('Not found', 404);
@@ -167,7 +180,7 @@ export default {
 // =============================================================================
 
 async function handleAdmin(request: Request, env: Env, path: string): Promise<Response> {
-  if (!verifyAdmin(request, env)) {
+  if (!(await verifyAdmin(request, env))) {
     throw new ProxyError('Admin unauthorized', 401, 'invalid_admin_auth');
   }
 
@@ -291,6 +304,60 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
     return json({ ok: true, id });
   }
 
+  if (request.method === 'GET' && path === '/admin/api/analytics') {
+    const settings = await loadSettings(env);
+    return json(await getAnalytics(env, settings, new URL(request.url).searchParams));
+  }
+
+  if (request.method === 'GET' && path === '/admin/api/settings') {
+    const settings = await loadSettings(env);
+    return json({
+      ...settings,
+      users: settings.users.map((u) => ({ name: u.name, createdAt: u.createdAt })),
+    });
+  }
+
+  if (request.method === 'PUT' && path === '/admin/api/settings') {
+    const body = (await request.json()) as Settings;
+    const current = await loadSettings(env);
+    const next: Settings = {
+      ...current,
+      ...body,
+      // Users are managed via the users endpoints, never overwritten by a settings save.
+      users: current.users,
+    };
+    const error = validateSettings(next);
+    if (error) {
+      throw new ProxyError(`Invalid settings: ${error}`, 400);
+    }
+    await saveSettings(env, next);
+    return json({ ok: true, settings: { ...next, users: next.users.map((u) => ({ name: u.name, createdAt: u.createdAt })) } });
+  }
+
+  if (request.method === 'POST' && path === '/admin/api/users') {
+    const body = (await request.json()) as { name?: string };
+    const name = body.name?.trim();
+    if (!name) throw new ProxyError('User name is required', 400);
+    const settings = await loadSettings(env);
+    if (settings.users.some((u) => u.name === name)) {
+      throw new ProxyError('User already exists', 409);
+    }
+    const plainToken = `admusr_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+    settings.users.push({ name, hash: await sha256Hex(plainToken), createdAt: new Date().toISOString() });
+    await saveSettings(env, settings);
+    return json({ ok: true, token: plainToken, user: { name } }, 201);
+  }
+
+  if (request.method === 'DELETE' && path.startsWith('/admin/api/users/')) {
+    const name = decodeURIComponent(path.slice('/admin/api/users/'.length));
+    const settings = await loadSettings(env);
+    const before = settings.users.length;
+    settings.users = settings.users.filter((u) => u.name !== name);
+    if (settings.users.length === before) throw new ProxyError('User not found', 404);
+    await saveSettings(env, settings);
+    return json({ ok: true, name });
+  }
+
   throw new ProxyError('Admin route not found', 404);
 }
 
@@ -298,7 +365,15 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
 // Image generation
 // =============================================================================
 
-async function handleImageGeneration(request: Request, env: Env): Promise<Response> {
+async function handleImageGeneration(
+  request: Request,
+  env: Env,
+  identity: ClientIdentity,
+  agent: string,
+  settings: Settings,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now();
   const body = (await request.json()) as { prompt?: string; model?: string; seed?: number };
   const prompt = body.prompt?.trim();
   if (!prompt) {
@@ -314,10 +389,44 @@ async function handleImageGeneration(request: Request, env: Env): Promise<Respon
       ? Math.floor(body.seed)
       : Math.floor(Math.random() * 1_000_000) + 1;
 
+  const metricBase = {
+    ts: startedAt,
+    route: modelName,
+    client: identity.label,
+    agent,
+    upstreamKey: '',
+    capacityTotal: totalCapacity(settings),
+    stream: 0,
+    temperature: null,
+    topP: null,
+    maxTokens: null,
+    messages: 1,
+    promptTokens: 0,
+    completionTokens: 0,
+    reasoningTokens: 0,
+    toolCalls: 0,
+    truncated: 0,
+  };
   if (known === 'pollinations' || modelName === 'pollinations-flux') {
     const imageUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?${new URLSearchParams(
       { seed: String(seed), width: '1024', height: '1024', model: 'flux', nologo: 'true' }
     ).toString()}`;
+    ctx.waitUntil(
+      recordMetric(
+        env,
+        {
+          ...metricBase,
+          upstreamModel: 'pollinations/flux',
+          status: 200,
+          outcome: 'success',
+          errorClass: 'none',
+          latencyMs: Date.now() - startedAt,
+          ttftMs: Date.now() - startedAt,
+          generationMs: 0,
+        },
+        settings.retentionDays
+      )
+    );
     return json({
       created: Math.floor(Date.now() / 1000),
       model: modelName,
@@ -336,6 +445,7 @@ async function handleImageGeneration(request: Request, env: Env): Promise<Respon
     throw new ProxyError('Cloudflare AI binding not available', 500);
   }
   const result = await env.AI.run(cfModel.id, { prompt });
+  ctx.waitUntil(recordMetric(env, { ...metricBase, upstreamModel: cfModel.id, status: 200, outcome: 'success', errorClass: 'none', latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0 }, settings.retentionDays));
   return new Response(result as BodyInit, {
     headers: { 'Content-Type': cfModel.contentType, ...CORS_HEADERS },
   });
@@ -345,7 +455,15 @@ async function handleImageGeneration(request: Request, env: Env): Promise<Respon
 // Speech handler (Edge TTS)
 // =============================================================================
 
-async function handleSpeech(request: Request): Promise<Response> {
+async function handleSpeech(
+  request: Request,
+  env: Env,
+  identity: ClientIdentity,
+  agent: string,
+  settings: Settings,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now();
   const body = (await request.json()) as {
     input?: string;
     text?: string;
@@ -391,6 +509,14 @@ async function handleSpeech(request: Request): Promise<Response> {
         await reader.cancel(reason);
       },
     });
+    ctx.waitUntil(recordMetric(env, {
+      ts: startedAt, route: 'tts', upstreamModel: voice, client: identity.label, agent,
+      upstreamKey: '', status: 200, outcome: 'success', errorClass: 'none',
+      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
+      promptTokens: 0, completionTokens: 0, reasoningTokens: 0, toolCalls: 0, truncated: 0,
+      stream: 1, temperature: null, topP: null, maxTokens: null, messages: 1,
+      capacityTotal: totalCapacity(settings),
+    }, settings.retentionDays));
     return new Response(primed, {
       headers: { 'Content-Type': 'audio/mpeg', ...CORS_HEADERS },
     });
@@ -404,7 +530,15 @@ async function handleSpeech(request: Request): Promise<Response> {
 // OpenAI-format handler (existing)
 // =============================================================================
 
-async function handleChatCompletion(request: Request, env: Env): Promise<Response> {
+async function handleChatCompletion(
+  request: Request,
+  env: Env,
+  identity: ClientIdentity,
+  agent: string,
+  settings: Settings,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now();
   const body = await request.json();
   const chatRequest = body as OpenAIChatRequest;
 
@@ -414,18 +548,88 @@ async function handleChatCompletion(request: Request, env: Env): Promise<Respons
   if (!chatRequest.model) {
     throw new ProxyError('Invalid request: model is required', 400);
   }
+  if (settings.maxTokensCap > 0) {
+    chatRequest.max_tokens = Math.min(chatRequest.max_tokens ?? settings.maxTokensCap, settings.maxTokensCap);
+  }
+
+  const baseMetric = {
+    ts: startedAt,
+    route: chatRequest.model,
+    upstreamModel: '',
+    client: identity.label,
+    agent,
+    upstreamKey: '',
+    capacityTotal: totalCapacity(settings),
+    stream: chatRequest.stream ? 1 : 0,
+    temperature: chatRequest.temperature ?? null,
+    topP: chatRequest.top_p ?? null,
+    maxTokens: chatRequest.max_tokens ?? null,
+    messages: chatRequest.messages.length,
+    promptTokens: 0,
+    completionTokens: 0,
+    reasoningTokens: 0,
+    toolCalls: 0,
+    truncated: 0,
+  };
+  const record = (partial: Record<string, unknown>) =>
+    recordMetric(env, { ...baseMetric, ...partial } as never, settings.retentionDays);
+
+  // Model governor: per-model RPM limit from Settings engages before upstream.
+  const limit = settings.modelLimits[chatRequest.model];
+  if (limit && limit > 0 && (await routeUsageLastMinute(env, chatRequest.model)) >= limit) {
+    ctx.waitUntil(record({ status: 429, outcome: 'governor', errorClass: 'rate_limit', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
+    throw new ProxyError(`Model limit reached for ${chatRequest.model} (${limit}/min)`, 429);
+  }
 
   console.log(`[Worker] model=${chatRequest.model} stream=${chatRequest.stream || false}`);
 
-  const router = new Router(env, await loadEffectiveRoutes(env));
-  const response = await router.executeWithFallback(chatRequest, 'openai');
+  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+    settings,
+    keyUsage: await keyUsageLastMinute(env),
+  });
+  let response;
+  try {
+    response = await router.executeWithFallback(chatRequest, 'openai');
+  } catch (error) {
+    const status = error instanceof ProxyError ? error.statusCode : 500;
+    ctx.waitUntil(
+      record({
+        status,
+        outcome: 'upstream_error',
+        errorClass: errorClassForStatus(status),
+        latencyMs: Date.now() - startedAt,
+        ttftMs: Date.now() - startedAt,
+        generationMs: 0,
+      })
+    );
+    throw error;
+  }
+  const latencyMs = Date.now() - startedAt;
 
   if (!response.success) {
-    throw new ProxyError(response.error || 'All providers failed', response.statusCode || 500);
+    const status = response.statusCode || 500;
+    ctx.waitUntil(record({
+      status, outcome: 'upstream_error', errorClass: errorClassForStatus(status),
+      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
+      latencyMs, ttftMs: latencyMs, generationMs: 0,
+    }));
+    throw new ProxyError(response.error || 'All providers failed', status);
   }
 
   if (response.stream) {
-    return new Response(response.stream, {
+    const wrapped = wrapStreamForMetrics(response.stream, (stats, totalMs) => {
+      void record({
+        status: 200, outcome: 'success', errorClass: 'none',
+        upstreamModel: stats.upstreamModel || response.upstreamModel || '',
+        upstreamKey: response.keyUsed ?? '',
+        latencyMs: totalMs, ttftMs: stats.ttftMs || totalMs,
+        generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
+        promptTokens: stats.promptTokens, completionTokens: stats.completionTokens,
+        reasoningTokens: stats.reasoningTokens, toolCalls: stats.toolCalls,
+        truncated: stats.truncated,
+      });
+    }, startedAt);
+    return new Response(wrapped, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -435,6 +639,18 @@ async function handleChatCompletion(request: Request, env: Env): Promise<Respons
     });
   }
 
+  const usage = (response.response as { usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } } | undefined)?.usage;
+  const choice = response.response?.choices?.[0];
+  ctx.waitUntil(record({
+    status: 200, outcome: 'success', errorClass: 'none',
+    upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
+    latencyMs, ttftMs: latencyMs, generationMs: 0,
+    promptTokens: usage?.prompt_tokens ?? 0,
+    completionTokens: usage?.completion_tokens ?? 0,
+    reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    toolCalls: choice?.message?.tool_calls?.length ?? 0,
+    truncated: choice?.finish_reason === 'length' ? 1 : 0,
+  }));
   return json(response.response);
 }
 
@@ -442,7 +658,14 @@ async function handleChatCompletion(request: Request, env: Env): Promise<Respons
 // Anthropic-format handler (dual-path)
 // =============================================================================
 
-async function handleAnthropicChat(request: Request, env: Env): Promise<Response> {
+async function handleAnthropicChat(
+  request: Request,
+  env: Env,
+  identity: ClientIdentity,
+  agent: string,
+  settings: Settings,
+  ctx: ExecutionContext
+): Promise<Response> {
   const body: AnthropicRequest = await request.json();
 
   if (!body.messages || !Array.isArray(body.messages)) {
@@ -453,8 +676,12 @@ async function handleAnthropicChat(request: Request, env: Env): Promise<Response
   }
 
   console.log(`[AnthropicHandler] model=${body.model} stream=${body.stream || false}`);
+  void identity; void agent; void ctx;
 
-  const router = new Router(env, await loadEffectiveRoutes(env));
+  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+    settings,
+    keyUsage: await keyUsageLastMinute(env),
+  });
   const providers = router.getProvidersForModel(body.model);
 
   const hasAnthropicNative = providers.some(
@@ -601,24 +828,38 @@ function extractToken(request: Request): string | null {
   return request.headers.get('x-api-key');
 }
 
-async function verifyAuth(request: Request, env: Env): Promise<boolean> {
+async function verifyAuth(
+  request: Request,
+  env: Env,
+  settings: Settings
+): Promise<ClientIdentity | null> {
   const token = extractToken(request);
-  if (!token) return false;
+  if (!token) return null;
 
-  if (env.PROXY_AUTH_TOKEN && constantTimeEqual(token, env.PROXY_AUTH_TOKEN)) return true;
-
-  // Dashboard-created client keys (stored hashed in KV)
-  return isClientKey(env, token);
+  if (settings.authMode !== 'keys' && env.PROXY_AUTH_TOKEN && constantTimeEqual(token, env.PROXY_AUTH_TOKEN)) {
+    return { label: 'Master', kind: 'master' };
+  }
+  if (settings.authMode !== 'master') {
+    const record = await findClientKey(env, token);
+    if (record) return { label: record.name, kind: 'client-key' };
+  }
+  return null;
 }
 
-function verifyAdmin(request: Request, env: Env): boolean {
-  if (!env.ADMIN_TOKEN) {
-    console.error('[verifyAdmin] ADMIN_TOKEN not configured — rejecting admin requests');
-    return false;
-  }
+async function verifyAdmin(request: Request, env: Env): Promise<boolean> {
   const token = request.headers.get('x-admin-token') ?? extractToken(request);
   if (!token) return false;
-  return constantTimeEqual(token, env.ADMIN_TOKEN);
+  if (env.ADMIN_TOKEN && constantTimeEqual(token, env.ADMIN_TOKEN)) return true;
+  // Dashboard users from Settings (tokens stored hashed)
+  const settings = await loadSettings(env);
+  if (settings.users.length) {
+    const hash = await sha256Hex(token);
+    if (settings.users.some((u) => u.hash === hash)) return true;
+  }
+  if (!env.ADMIN_TOKEN && settings.users.length === 0) {
+    console.error('[verifyAdmin] ADMIN_TOKEN not configured — rejecting admin requests');
+  }
+  return false;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

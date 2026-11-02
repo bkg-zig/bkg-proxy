@@ -1,5 +1,5 @@
 import { RouteConfig, ProviderConfig, Env, OpenAIChatRequest, ProviderResponse } from './types';
-import { TokenManager } from './token-manager';
+import { TokenManager, TokenRuntime } from './token-manager';
 import { ProxyError } from './utils/error-handler';
 // Routes ship inside the Worker script, so they are not subject to the 5.1 kB
 // limit Cloudflare puts on text bindings. See scripts/generate-routes.mjs.
@@ -10,7 +10,8 @@ export class Router {
 
   constructor(
     private env: Env,
-    routes?: RouteConfig
+    routes?: RouteConfig,
+    private runtime?: TokenRuntime
   ) {
     this.routes = routes ?? this.parseRoutesConfig();
   }
@@ -92,9 +93,10 @@ export class Router {
       );
 
       try {
-        const manager = new TokenManager(config, this.env);
+        const manager = new TokenManager(config, this.env, this.runtime);
         const response = await manager.executeWithRotation(request);
 
+        response.upstreamModel = config.model;
         if (response.success) {
           console.log(`[Router] Success with provider: ${config.provider}/${config.model}`);
           return response;
@@ -126,6 +128,7 @@ export class Router {
       success: false,
       error: `All providers failed. Last error: ${lastError?.message || lastError || 'Unknown error'}`,
       statusCode: lastStatusCode ?? 500,
+      upstreamModel: orderedProviders[orderedProviders.length - 1]?.model ?? '',
     };
   }
 

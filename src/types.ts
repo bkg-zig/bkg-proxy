@@ -124,6 +124,7 @@ export interface RouteConfig {
 export interface Env {
   AI?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   ADMIN_KV?: KVNamespace;
+  DB?: D1Database;
   ADMIN_TOKEN?: string;
   PROXY_AUTH_TOKEN: string;
   /** Optional override of the bundled routes.json — a JSON string of RouteConfig. */
@@ -133,6 +134,9 @@ export interface Env {
 
 // Provider response
 export interface ProviderResponse {
+  /** Name of the env key that produced this response (for per-key metrics). */
+  keyUsed?: string;
+  upstreamModel?: string;
   success: boolean;
   response?: OpenAIChatResponse;
   /** Anthropic-native raw response (used by nativeChat path) */
