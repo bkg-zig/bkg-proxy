@@ -38,6 +38,13 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [search, setSearch] = useState('');
   const [showLogin, setShowLogin] = useState(false);
+  const [menuOpen, setMenuOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('blg_menu') !== 'closed'; } catch { return true; }
+  });
+  const toggleMenu = () => setMenuOpen((open) => {
+    try { localStorage.setItem('blg_menu', open ? 'closed' : 'open'); } catch { /* private mode */ }
+    return !open;
+  });
   const [fromInput, setFromInput] = useState('');
   const [toInput, setToInput] = useState('');
   const rangeRef = useRef(range);
@@ -101,7 +108,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside id="app-sidebar" className={`sidebar${menuOpen ? '' : ' collapsed'}${menuOpen ? ' open' : ''}`}>
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
@@ -120,7 +127,7 @@ export default function App() {
                     key={item.id}
                     className={`nav-item${tab === item.id ? ' active' : ''}`}
                     aria-selected={tab === item.id}
-                    onClick={() => setTab(item.id)}
+                    onClick={() => { setTab(item.id); if (window.innerWidth <= 900) setMenuOpen(false); }}
                   >
                     <span className="nav-dot" />{item.label}
                   </button>
@@ -130,7 +137,7 @@ export default function App() {
         </nav>
         <div className="side-user">
           <div className="avatar">{me ? me.name.slice(0, 1).toUpperCase() : '?'}</div>
-          <div>
+          <div className="user-text">
             <div style={{ fontWeight: 600 }}>{me ? me.name : 'Nicht angemeldet'}</div>
             <div className="muted" style={{ fontSize: 13.5 }}>{me ? `Rolle: ${me.role}` : 'Bitte anmelden'}</div>
           </div>
@@ -139,6 +146,15 @@ export default function App() {
 
       <div className="content">
         <header className="topbar">
+          <button
+            className="btn menu-toggle"
+            onClick={toggleMenu}
+            aria-expanded={menuOpen}
+            aria-controls="app-sidebar"
+            aria-label={menuOpen ? 'Menü einklappen' : 'Menü ausklappen'}
+          >
+            {menuOpen ? 'Menü schließen' : 'Menü öffnen'}
+          </button>
           <div className="title">BLG Proxy · {NAV.flatMap((s) => s.items).find((i) => i.id === tab)?.label}</div>
           <div className="search">
             <input
