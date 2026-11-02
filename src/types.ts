@@ -123,6 +123,8 @@ export interface RouteConfig {
 // Environment bindings
 export interface Env {
   AI?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  ADMIN_KV?: KVNamespace;
+  ADMIN_TOKEN?: string;
   PROXY_AUTH_TOKEN: string;
   /** Optional override of the bundled routes.json — a JSON string of RouteConfig. */
   ROUTES_CONFIG?: string;

@@ -8,8 +8,15 @@ import bundledRoutes from '../routes.json';
 export class Router {
   private routes: RouteConfig;
 
-  constructor(private env: Env) {
-    this.routes = this.parseRoutesConfig();
+  constructor(
+    private env: Env,
+    routes?: RouteConfig
+  ) {
+    this.routes = routes ?? this.parseRoutesConfig();
+  }
+
+  getRoutes(): RouteConfig {
+    return this.routes;
   }
 
   /**

@@ -6,6 +6,11 @@ compatibility_date = "2026-09-15"
 [ai]
 binding = "AI"
 
+# Admin dashboard data: model routes override + client API keys
+[[kv_namespaces]]
+binding = "ADMIN_KV"
+id = "36c99f9286a94318916afca4281716eb"
+
 # Cloudflare dashboard logs (optional)
 [observability]
 enabled = false

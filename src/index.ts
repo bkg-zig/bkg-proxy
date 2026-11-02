@@ -1,4 +1,4 @@
-import { Env, OpenAIChatRequest, ProviderConfig } from './types';
+import { Env, OpenAIChatRequest, ProviderConfig, RouteConfig } from './types';
 import { AnthropicRequest } from './anthropic-types';
 import { Router } from './router';
 import {
@@ -16,12 +16,43 @@ import {
   AnthropicStreamAdapter,
 } from './utils/anthropic-adapter';
 import { generateId } from './utils/response-mapper';
+import {
+  loadEffectiveRoutes,
+  saveRoutes,
+  resetRoutes,
+  listClientKeys,
+  createClientKey,
+  deleteClientKey,
+  isClientKey,
+} from './store';
+import { dashboardHtml } from './dashboard';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, x-admin-token',
   'Access-Control-Max-Age': '86400',
+};
+
+const ALL_NVIDIA_KEYS = [
+  'NVIDIA_KEY_1',
+  'NVIDIA_KEY_2',
+  'NVIDIA_KEY_3',
+  'NVIDIA_KEY_5',
+  'NVIDIA_KEY_6',
+  'NVIDIA_KEY_7',
+  'NVIDIA_KEY_4',
+];
+const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+
+const IMAGE_MODELS: Record<string, { id: string; contentType: string } | 'pollinations'> = {
+  sdxl: { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', contentType: 'image/png' },
+  'sdxl-lightning': {
+    id: '@cf/bytedance/stable-diffusion-xl-lightning',
+    contentType: 'image/jpeg',
+  },
+  dreamshaper: { id: '@cf/lykon/dreamshaper-8-lcm', contentType: 'image/png' },
+  'pollinations-flux': 'pollinations',
 };
 
 export default {
@@ -39,12 +70,25 @@ export default {
         return json({
           status: 'ok',
           service: 'ai-worker-proxy',
+          dashboard: '/dashboard',
           timestamp: new Date().toISOString(),
         });
       }
 
-      // Everything below requires auth
-      if (!verifyAuth(request, env)) {
+      // Admin dashboard page — the page itself is public, all data/actions need ADMIN_TOKEN
+      if ((path === '/dashboard' || path === '/admin') && request.method === 'GET') {
+        return new Response(dashboardHtml(), {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
+        });
+      }
+
+      // Admin API — separate ADMIN_TOKEN auth
+      if (path.startsWith('/admin/api/')) {
+        return await handleAdmin(request, env, path);
+      }
+
+      // Everything below requires auth (master token or dashboard-created client key)
+      if (!(await verifyAuth(request, env))) {
         throw new ProxyError('Unauthorized', 401, 'invalid_auth');
       }
 
@@ -56,11 +100,16 @@ export default {
           path === '/anthropic/models' ||
           path === '/anthropic/v1/models')
       ) {
-        const router = new Router(env);
+        const router = new Router(env, await loadEffectiveRoutes(env));
         return json({
           object: 'list',
           data: router.getAvailableModels(),
         });
+      }
+
+      // Image generation — POST only
+      if (request.method === 'POST' && path === '/v1/images/generations') {
+        return await handleImageGeneration(request, env);
       }
 
       // Anthropic-format chat completions — POST only
@@ -68,7 +117,7 @@ export default {
         request.method === 'POST' &&
         (path === '/anthropic/v1/messages' || path === '/anthropic/messages')
       ) {
-        return handleAnthropicChat(request, env);
+        return await handleAnthropicChat(request, env);
       }
 
       // OpenAI-format chat completions — POST only
@@ -76,7 +125,7 @@ export default {
         request.method === 'POST' &&
         (path === '/' || path === '/v1/chat/completions' || path === '/chat/completions')
       ) {
-        return handleChatCompletion(request, env);
+        return await handleChatCompletion(request, env);
       }
 
       throw new ProxyError('Not found', 404);
@@ -91,6 +140,175 @@ export default {
     }
   },
 };
+
+// =============================================================================
+// Admin API (dashboard backend, ADMIN_TOKEN)
+// =============================================================================
+
+async function handleAdmin(request: Request, env: Env, path: string): Promise<Response> {
+  if (!verifyAdmin(request, env)) {
+    throw new ProxyError('Admin unauthorized', 401, 'invalid_admin_auth');
+  }
+
+  if (request.method === 'GET' && path === '/admin/api/overview') {
+    const routes = await loadEffectiveRoutes(env);
+    const clientKeys = (await listClientKeys(env)).map(({ id, name, prefix, createdAt }) => ({
+      id,
+      name,
+      prefix,
+      createdAt,
+    }));
+    return json({
+      routes,
+      clientKeys,
+      upstreamKeys: Object.fromEntries(
+        ['NVIDIA_KEY_1', 'NVIDIA_KEY_2', 'NVIDIA_KEY_3', 'NVIDIA_KEY_4', 'NVIDIA_KEY_5', 'NVIDIA_KEY_6', 'NVIDIA_KEY_7'].map(
+          (name) => [name, Boolean(env[name])]
+        )
+      ),
+      proxyAuthSet: Boolean(env.PROXY_AUTH_TOKEN),
+      adminKv: Boolean(env.ADMIN_KV),
+    });
+  }
+
+  if (request.method === 'GET' && path === '/admin/api/stats') {
+    const sources: Record<string, string> = {
+      balanced: 'https://nimstats.maurodruwel.be/top',
+      speed: 'https://nimstats.maurodruwel.be/top/speed',
+      intelligence: 'https://nimstats.maurodruwel.be/top/intelligence',
+    };
+    const result: Record<string, unknown> = { fetchedAt: new Date().toISOString() };
+    await Promise.all(
+      Object.entries(sources).map(async ([name, sourceUrl]) => {
+        try {
+          const response = await fetch(sourceUrl, {
+            headers: { Accept: 'application/json' },
+            cf: { cacheTtl: 600, cacheEverything: true },
+          } as RequestInit);
+          result[name] = response.ok ? await response.json() : { error: `HTTP ${response.status}` };
+        } catch (error) {
+          result[name] = { error: error instanceof Error ? error.message : 'fetch failed' };
+        }
+      })
+    );
+    return json(result);
+  }
+
+  if (request.method === 'POST' && path === '/admin/api/models') {
+    const body = (await request.json()) as {
+      name?: string;
+      model?: string;
+      baseUrl?: string;
+      apiKeys?: string[];
+    };
+    const name = body.name?.trim();
+    const model = body.model?.trim();
+    if (!name || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(name)) {
+      throw new ProxyError('Invalid model name', 400);
+    }
+    if (!model) {
+      throw new ProxyError('Upstream model is required', 400);
+    }
+    const routes = await loadEffectiveRoutes(env);
+    routes[name] = [
+      {
+        provider: 'openai-compatible',
+        baseUrl: body.baseUrl?.trim() || NVIDIA_BASE_URL,
+        model,
+        apiKeys: body.apiKeys?.length ? body.apiKeys : ALL_NVIDIA_KEYS,
+      },
+    ];
+    await saveRoutes(env, routes);
+    return json({ ok: true, name, routes });
+  }
+
+  if (request.method === 'DELETE' && path.startsWith('/admin/api/models/')) {
+    const name = decodeURIComponent(path.slice('/admin/api/models/'.length));
+    const routes: RouteConfig = await loadEffectiveRoutes(env);
+    if (!routes[name]) {
+      throw new ProxyError(`Model not found: ${name}`, 404);
+    }
+    delete routes[name];
+    await saveRoutes(env, routes);
+    return json({ ok: true, name, routes });
+  }
+
+  if (request.method === 'POST' && path === '/admin/api/routes/reset') {
+    await resetRoutes(env);
+    return json({ ok: true, routes: await loadEffectiveRoutes(env) });
+  }
+
+  if (request.method === 'POST' && path === '/admin/api/keys') {
+    const body = (await request.json()) as { name?: string };
+    const { record, plainKey } = await createClientKey(env, body.name ?? '');
+    return json(
+      {
+        ok: true,
+        key: plainKey,
+        record: {
+          id: record.id,
+          name: record.name,
+          prefix: record.prefix,
+          createdAt: record.createdAt,
+        },
+      },
+      201
+    );
+  }
+
+  if (request.method === 'DELETE' && path.startsWith('/admin/api/keys/')) {
+    const id = decodeURIComponent(path.slice('/admin/api/keys/'.length));
+    const deleted = await deleteClientKey(env, id);
+    if (!deleted) {
+      throw new ProxyError('Key not found', 404);
+    }
+    return json({ ok: true, id });
+  }
+
+  throw new ProxyError('Admin route not found', 404);
+}
+
+// =============================================================================
+// Image generation
+// =============================================================================
+
+async function handleImageGeneration(request: Request, env: Env): Promise<Response> {
+  const body = (await request.json()) as { prompt?: string; model?: string; seed?: number };
+  const prompt = body.prompt?.trim();
+  if (!prompt) {
+    throw new ProxyError('Invalid request: prompt is required', 400);
+  }
+  if (prompt.length > 2000) {
+    throw new ProxyError('Invalid request: prompt too long (max 2000)', 400);
+  }
+  const modelName = body.model?.trim() || 'sdxl-lightning';
+  const known = IMAGE_MODELS[modelName];
+  const seed =
+    typeof body.seed === 'number' && Number.isFinite(body.seed)
+      ? Math.floor(body.seed)
+      : Math.floor(Math.random() * 1_000_000) + 1;
+
+  if (known === 'pollinations' || modelName === 'pollinations-flux') {
+    const imageUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?${new URLSearchParams(
+      { seed: String(seed), width: '1024', height: '1024', model: 'flux', nologo: 'true' }
+    ).toString()}`;
+    return json({ created: Math.floor(Date.now() / 1000), model: modelName, seed, data: [{ url: imageUrl }] });
+  }
+
+  const cfModel = known ?? (modelName.startsWith('@cf/')
+    ? { id: modelName, contentType: 'image/png' }
+    : undefined);
+  if (!cfModel) {
+    throw new ProxyError(`Unknown image model: ${modelName}`, 400);
+  }
+  if (!env.AI) {
+    throw new ProxyError('Cloudflare AI binding not available', 500);
+  }
+  const result = await env.AI.run(cfModel.id, { prompt });
+  return new Response(result as BodyInit, {
+    headers: { 'Content-Type': cfModel.contentType, ...CORS_HEADERS },
+  });
+}
 
 // =============================================================================
 // OpenAI-format handler (existing)
@@ -109,7 +327,7 @@ async function handleChatCompletion(request: Request, env: Env): Promise<Respons
 
   console.log(`[Worker] model=${chatRequest.model} stream=${chatRequest.stream || false}`);
 
-  const router = new Router(env);
+  const router = new Router(env, await loadEffectiveRoutes(env));
   const response = await router.executeWithFallback(chatRequest, 'openai');
 
   if (!response.success) {
@@ -146,33 +364,28 @@ async function handleAnthropicChat(request: Request, env: Env): Promise<Response
 
   console.log(`[AnthropicHandler] model=${body.model} stream=${body.stream || false}`);
 
-  const router = new Router(env);
+  const router = new Router(env, await loadEffectiveRoutes(env));
   const providers = router.getProvidersForModel(body.model);
 
-  // Check if any provider supports Anthropic natively
   const hasAnthropicNative = providers.some(
     (p) => p.provider === 'anthropic' || p.provider === 'anthropic-compatible'
   );
 
   if (hasAnthropicNative) {
-    return handleAnthropicNativePath(body, providers, env);
+    return await handleAnthropicNativePath(body, providers, env, router);
   }
 
-  return handleAnthropicConversionPath(body, router);
+  return await handleAnthropicConversionPath(body, router);
 }
 
-/**
- * Anthropic-native path: call AnthropicProvider.nativeChat() directly.
- * No format conversion — preserves Anthropic request/response format end-to-end.
- */
 async function handleAnthropicNativePath(
   body: AnthropicRequest,
   providers: ProviderConfig[],
-  env: Env
+  env: Env,
+  router: Router
 ): Promise<Response> {
   let lastError: unknown = null;
 
-  // First try all anthropic-compatible providers natively
   for (const config of providers) {
     if (config.provider !== 'anthropic' && config.provider !== 'anthropic-compatible') {
       continue;
@@ -182,7 +395,6 @@ async function handleAnthropicNativePath(
     try {
       provider = createProvider(config, env) as AnthropicProvider;
     } catch (error) {
-      // Bad config (e.g. missing baseUrl) — skip this provider, don't abort the loop
       console.error(
         `[AnthropicNativePath] Failed to create provider ${config.provider}/${config.model}:`,
         error
@@ -233,13 +445,11 @@ async function handleAnthropicNativePath(
     }
   }
 
-  // Fall back to conversion path for any non-Anthropic providers
   const otherProviders = providers.filter(
     (p) => p.provider !== 'anthropic' && p.provider !== 'anthropic-compatible'
   );
   if (otherProviders.length > 0) {
-    const router = new Router(env);
-    return handleAnthropicConversionPath(body, router, otherProviders);
+    return await handleAnthropicConversionPath(body, router, otherProviders);
   }
 
   const err = lastError as { message?: string; statusCode?: number } | null;
@@ -249,10 +459,6 @@ async function handleAnthropicNativePath(
   );
 }
 
-/**
- * Conversion path: convert Anthropic request → OpenAI → route → convert response back.
- * Used when the target provider does not support Anthropic natively.
- */
 async function handleAnthropicConversionPath(
   body: AnthropicRequest,
   router: Router,
@@ -297,30 +503,34 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function verifyAuth(request: Request, env: Env): boolean {
-  if (!env.PROXY_AUTH_TOKEN) {
-    console.error('[verifyAuth] PROXY_AUTH_TOKEN not configured — rejecting all requests');
-    return false;
-  }
-
-  // OpenAI-style: Authorization: Bearer <token>
+function extractToken(request: Request): string | null {
   const authHeader = request.headers.get('Authorization');
   if (authHeader) {
-    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-    if (constantTimeEqual(token, env.PROXY_AUTH_TOKEN)) return true;
+    return authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
   }
-
-  // Anthropic-style: x-api-key: <token>
-  const apiKey = request.headers.get('x-api-key');
-  if (apiKey !== null && constantTimeEqual(apiKey, env.PROXY_AUTH_TOKEN)) return true;
-
-  return false;
+  return request.headers.get('x-api-key');
 }
 
-/**
- * Constant-time string comparison for the shared secret token.
- * Length inequality still short-circuits — acceptable for a fixed-length token.
- */
+async function verifyAuth(request: Request, env: Env): Promise<boolean> {
+  const token = extractToken(request);
+  if (!token) return false;
+
+  if (env.PROXY_AUTH_TOKEN && constantTimeEqual(token, env.PROXY_AUTH_TOKEN)) return true;
+
+  // Dashboard-created client keys (stored hashed in KV)
+  return isClientKey(env, token);
+}
+
+function verifyAdmin(request: Request, env: Env): boolean {
+  if (!env.ADMIN_TOKEN) {
+    console.error('[verifyAdmin] ADMIN_TOKEN not configured — rejecting admin requests');
+    return false;
+  }
+  const token = request.headers.get('x-admin-token') ?? extractToken(request);
+  if (!token) return false;
+  return constantTimeEqual(token, env.ADMIN_TOKEN);
+}
+
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
