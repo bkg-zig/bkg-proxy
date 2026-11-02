@@ -6,83 +6,143 @@ export function dashboardHtml(): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BLG Proxy – Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --cyber-bg:#05070a; --cyber-bg-deep:#020407; --cyber-panel:#080d12; --cyber-panel-2:#0b1118; --cyber-panel-3:#0e151d;
-  --neon-cyan:#00f6ff; --neon-cyan-bright:#5cffff; --neon-cyan-dark:#007f87;
-  --neon-magenta:#ff00e5; --neon-magenta-dark:#850078; --neon-amber:#ffb000; --neon-red:#ff1744; --neon-red-bright:#ff4d6d; --neon-green:#39ff14; --neon-orange:#ff6b00;
-  --text-primary:#d7faff; --text-secondary:#9db4be; --text-muted:#5f7681;
-  --border:#17252d; --border-hover:#007f87; --border-active:#00f6ff;
-  --font-mono:'JetBrains Mono',monospace; --font-ui:'Rajdhani',system-ui,sans-serif;
-  --r-sm:2px; --r-lg:6px;
+  --bg:#07090d; --surface-0:#0d1117; --surface-1:#12181f; --surface-2:#171e28; --surface-3:#1e2835;
+  --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
+  --accent:#4a9eff; --accent-soft:rgba(74,158,255,.13); --accent-ring:rgba(74,158,255,.4);
+  --text:#eef2f7; --text-muted:#9aa7b5; --text-subtle:#62707f;
+  --success:#3fb96f; --warning:#e5b83b; --danger:#e5534b; --magenta:#c65df0;
+  --font-sans:'Inter',system-ui,sans-serif; --font-display:'Space Grotesk','Inter',sans-serif; --font-mono:'JetBrains Mono',monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cyber-bg);color:var(--text-primary);font-family:var(--font-ui);font-size:18px;line-height:1.5;min-height:100vh;
-  background-image:linear-gradient(rgba(0,246,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(0,246,255,.018) 1px,transparent 1px),radial-gradient(circle at 50% 0%,rgba(0,246,255,.04),transparent 50%);
-  background-size:40px 40px,40px 40px,100% 100%;background-attachment:fixed}
-h1,h2,h3{font-weight:700;text-transform:uppercase;letter-spacing:.12em}
-h1{font-size:31px} h2{font-size:23px;margin:22px 0 12px} h2:first-child{margin-top:0} h3{font-size:19px}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:17px;line-height:1.55;min-height:100vh;
+  background-image:radial-gradient(ellipse 75% 45% at 65% -10%, rgba(74,158,255,.07), transparent),radial-gradient(ellipse 55% 35% at 90% 110%, rgba(74,158,255,.03), transparent);background-attachment:fixed}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;letter-spacing:.01em;text-transform:none}
+h1{font-size:26px} h2{font-size:21px;margin:26px 0 12px} h2:first-child{margin-top:0} h3{font-size:17px}
 code{font-family:var(--font-mono);font-size:.82em}
-header,main{max-width:1240px;margin:0 auto;padding-left:22px;padding-right:22px}
-header{padding-top:22px}
-main{padding-bottom:48px}
-.sub{color:var(--text-secondary)}
-.cyber-panel{background:var(--cyber-panel);border:1px solid var(--border);border-radius:var(--r-sm);padding:20px;margin-bottom:20px}
-.cyber-panel:hover{border-color:var(--border-hover)}
-.panel-head{font-family:var(--font-mono);font-size:14px;color:var(--neon-cyan);letter-spacing:.15em;text-transform:uppercase;border:1px solid var(--border);border-bottom:0;background:var(--cyber-panel-2);padding:8px 12px;margin-top:20px}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text-secondary);font-family:var(--font-mono);font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;white-space:nowrap}
-.btn:hover{border-color:var(--neon-cyan-dark);color:var(--neon-cyan);box-shadow:0 0 6px rgba(0,246,255,.2)}
-.btn-primary{border-color:var(--neon-cyan-dark);color:var(--neon-cyan)}
-.btn-ai{border-color:var(--neon-magenta-dark);color:var(--neon-magenta)}
-.btn-danger{border-color:var(--neon-red);color:var(--neon-red-bright);padding:7px 12px;font-size:14px}
-.btn[aria-selected="true"]{background:var(--neon-cyan);color:#02141a;border-color:var(--neon-cyan)}
-.btn[aria-pressed="true"]{background:var(--neon-amber);color:#181000;border-color:var(--neon-amber)}
-input,textarea,select{background:#030609;color:var(--text-primary);border:1px solid #1a3138;border-radius:var(--r-sm);padding:11px;font-family:var(--font-mono);font-size:16px;outline:none;width:100%}
-input:focus,textarea:focus,select:focus{border-color:var(--neon-cyan);box-shadow:0 0 8px rgba(0,246,255,.25)}
+.app{display:flex;align-items:flex-start}
+.sidebar{width:264px;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;background:rgba(10,13,18,.92);border-right:1px solid var(--border);padding:18px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;gap:11px;align-items:center;padding:4px 8px 16px;border-bottom:1px solid var(--border);margin-bottom:14px}
+.brand-mark{width:38px;height:38px;border-radius:9px;background:var(--accent-soft);border:1px solid var(--accent-ring);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:19px}
+.brand-name{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:.06em}
+.brand-sub{font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;color:var(--accent);text-transform:uppercase}
+.nav-label{font-family:var(--font-mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-subtle);padding:14px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text-muted);font-family:var(--font-sans);font-size:15.5px;font-weight:500;cursor:pointer}
+.nav-item:hover{background:var(--surface-1);color:var(--text)}
+.nav-item[aria-selected="true"]{background:linear-gradient(180deg, rgba(74,158,255,.18), rgba(74,158,255,.08));color:var(--text);border-color:var(--accent-ring)}
+.nav-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle);flex-shrink:0}
+.nav-item[aria-selected="true"] .nav-dot{background:var(--accent)}
+.side-user{margin-top:auto;border-top:1px solid var(--border);padding:14px 10px 4px;display:flex;gap:10px;align-items:center}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#06121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);flex-shrink:0}
+.content{flex:1;min-width:0}
+.topbar{position:sticky;top:0;z-index:20;display:flex;gap:14px;align-items:center;padding:13px 26px;background:rgba(7,9,13,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.topbar .title{font-family:var(--font-display);font-weight:600;font-size:17px;white-space:nowrap}
+.search{flex:1;max-width:520px;margin:0 auto}
+.search input{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:9px 13px;font-size:15px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface-1);font-family:var(--font-mono);font-size:12.5px;color:var(--warning);white-space:nowrap}
+.pill.good{color:var(--success)}
+main{max-width:1180px;margin:0 auto;padding:22px 26px 48px}
+.cyber-panel,.card{background:var(--surface-0);border:1px solid var(--border);border-radius:12px}
+.cyber-panel{padding:22px;margin-bottom:20px;box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
+.panel-head{display:none}
+.hero{background:linear-gradient(135deg, #101823 0%, var(--surface-1) 55%, #0d1520 100%);border:1px solid var(--border-strong);border-radius:14px;padding:30px;margin-bottom:20px}
+.hero .kicker{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.24em;color:var(--accent);text-transform:uppercase}
+.hero .wordmark{font-family:var(--font-display);font-size:56px;font-weight:700;letter-spacing:.04em;line-height:1.05;margin:8px 0}
+.hero .wordmark span{color:var(--accent)}
+.hero p.lead{font-size:19px;color:var(--text)}
+.hero p.sub{color:var(--text-muted);max-width:640px;margin-top:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 17px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-sans);font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--surface-2);border-color:var(--border-strong)}
+.btn-primary{background:linear-gradient(180deg,#6db1ff,#3d8bff);color:#06121f;border-color:#2f7de0}
+.btn-primary:hover{filter:brightness(1.07);background:linear-gradient(180deg,#6db1ff,#3d8bff)}
+.btn-ai{border-color:rgba(198,93,240,.45);color:#dfa6f7}
+.btn-danger{border-color:rgba(229,83,75,.5);color:#ff9d97;padding:7px 12px;font-size:14px}
+.btn[aria-pressed="true"]{background:var(--warning);color:#181000;border-color:var(--warning)}
+input,textarea,select{background:var(--surface-0);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-family:var(--font-sans);font-size:16px;outline:none;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--accent-ring);background:var(--surface-1)}
 textarea{min-height:84px;resize:vertical}
-label{display:block;font-weight:600;margin:14px 0 6px}
-.tabs,.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
-.row>div{flex:1;min-width:200px}
-.tabs{margin:18px 0}
+label{display:block;font-weight:600;margin:14px 0 6px;font-size:15.5px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
 [hidden]{display:none!important}
-.cyber-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:15px}
-.cyber-table th{padding:9px 10px;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--neon-cyan);border-bottom:1px solid var(--border);background:var(--cyber-panel-2);cursor:pointer;user-select:none;white-space:nowrap}
-.cyber-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:top}
-.cyber-table tr:hover td{background:var(--cyber-panel-3);color:var(--text-primary)}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:12px}
-.card{background:var(--cyber-panel-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:16px}
-.card .big{font-size:26px;font-weight:700;font-family:var(--font-mono);color:var(--neon-cyan-bright);word-break:break-all}
-.card .lbl{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted)}
-.badge{display:inline-flex;padding:2px 8px;border-radius:var(--r-sm);font-family:var(--font-mono);font-size:13px;font-weight:600;text-transform:uppercase;border:1px solid var(--border);color:var(--text-muted)}
-.badge-green{color:var(--neon-green);border-color:rgba(57,255,20,.35);background:rgba(57,255,20,.08)}
-.badge-red{color:var(--neon-red-bright);border-color:rgba(255,23,68,.35);background:rgba(255,23,68,.08)}
-.badge-cyan{color:var(--neon-cyan);border-color:rgba(0,246,255,.35);background:rgba(0,246,255,.08)}
-.badge-amber{color:var(--neon-amber);border-color:rgba(255,176,0,.35);background:rgba(255,176,0,.08)}
+.cyber-table{width:100%;border-collapse:collapse;font-size:14.5px}
+.cyber-table th{padding:9px 10px;text-align:left;font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-subtle);border-bottom:1px solid var(--border);background:var(--surface-1);cursor:pointer;user-select:none;white-space:nowrap}
+.cyber-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);vertical-align:top}
+.cyber-table tr:hover td{background:var(--surface-1);color:var(--text)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:14px;margin-top:12px}
+.card{padding:17px}
+.card .big{font-size:25px;font-weight:700;font-family:var(--font-display);color:var(--text);word-break:break-all}
+.card .lbl{font-family:var(--font-mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-subtle)}
+.badge{display:inline-flex;padding:2px 8px;border-radius:999px;font-family:var(--font-mono);font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--text-muted)}
+.badge-green{color:var(--success);border-color:rgba(63,185,111,.4)} .badge-red{color:#ff9d97;border-color:rgba(229,83,75,.4)}
+.badge-cyan{color:var(--accent);border-color:var(--accent-ring)} .badge-amber{color:var(--warning);border-color:rgba(229,184,59,.4)}
 .led{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
-.led-online{background:var(--neon-green);box-shadow:0 0 5px var(--neon-green)}
-.led-error{background:var(--neon-red);box-shadow:0 0 5px var(--neon-red)}
-.bar-track{height:12px;background:var(--cyber-panel-2);border:1px solid var(--border);overflow:hidden}
-.bar-fill{height:100%;background:var(--neon-cyan);transition:width .4s}
-.bar-fill.hot{background:var(--neon-amber)} .bar-fill.over{background:var(--neon-red)}
-.chart{position:relative;background:#030609;border:1px solid var(--border);padding:8px;margin-top:10px}
-.chart .tip{position:absolute;pointer-events:none;background:#0b1118;border:1px solid var(--neon-cyan-dark);padding:8px 10px;font-family:var(--font-mono);font-size:13px;color:var(--text-primary);display:none;z-index:5;max-width:320px}
-.muted{color:var(--text-secondary)} .status{min-height:1.5em;margin-top:10px} .ok{color:var(--neon-green);font-weight:700}
-img.result{max-width:100%;border:1px solid var(--border-hover);border-radius:var(--r-lg);margin-top:14px}
+.led-online{background:var(--success);box-shadow:0 0 0 3px rgba(63,185,111,.15)} .led-error{background:var(--danger);box-shadow:0 0 0 3px rgba(229,83,75,.15)}
+.bar-track{height:10px;background:var(--surface-2);border-radius:99px;overflow:hidden}
+.bar-fill{height:100%;background:var(--accent);border-radius:99px;transition:width .4s}
+.bar-fill.hot{background:var(--warning)} .bar-fill.over{background:var(--danger)}
+.chart{position:relative;background:var(--surface-0);border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:10px}
+.chart .tip{position:absolute;pointer-events:none;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:12.5px;color:var(--text);display:none;z-index:5;max-width:320px}
+.muted{color:var(--text-muted)} .status{min-height:1.5em;margin-top:10px} .ok{color:var(--success);font-weight:700}
+img.result{max-width:100%;border:1px solid var(--border-strong);border-radius:10px;margin-top:14px}
 audio{width:100%;margin-top:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row>div{flex:1;min-width:200px}
 .heat{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin-top:10px}
-.heat div{padding:9px 4px;text-align:center;font-family:var(--font-mono);font-size:13px;border:1px solid var(--border);background:var(--cyber-panel-2)}
-:focus-visible{outline:3px solid var(--neon-cyan);outline-offset:2px}
+.heat div{padding:9px 4px;text-align:center;font-family:var(--font-mono);font-size:12.5px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1)}
+.msg{border:1px solid var(--border);border-radius:12px;padding:13px 15px;margin-top:10px;background:var(--surface-1)}
+.msg.user{background:var(--accent-soft);border-color:var(--accent-ring)}
+.msg .who{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-subtle);margin-bottom:5px}
+.msg p{white-space:pre-wrap;word-break:break-word}
+:focus-visible{outline:2px solid var(--accent-ring);outline-offset:2px}
+@media (max-width:900px){
+  .app{flex-direction:column}
+  .sidebar{width:100%;height:auto;position:static;flex-direction:row;flex-wrap:wrap;align-items:center}
+  .brand{border:0;margin:0;padding:4px}
+  .nav-label{width:100%;padding:8px 10px 2px}
+  .nav-item{width:auto}
+  .side-user{margin:0;border:0}
+  .topbar{flex-wrap:wrap}
+  .hero .wordmark{font-size:38px}
+}
 @media (prefers-reduced-motion: reduce){*{transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
-<header>
-  <h1>BLG Proxy <span style="color:var(--neon-cyan)">Admin</span></h1>
-  <p class="sub">Eine API für Chat, Bilder und Sprache. Alles hier wird aus echten Anfragen gemessen.</p>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">B</div>
+    <div><div class="brand-name">BLG</div><div class="brand-sub">Proxy · Studio</div></div>
+  </div>
+  <nav aria-label="Bereiche">
+    <p class="nav-label">Übersicht</p>
+    <button class="nav-item" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" type="button"><span class="nav-dot"></span>Overview</button>
+    <p class="nav-label">Analyse</p>
+    <button class="nav-item" role="tab" id="tab-models" aria-controls="panel-models" aria-selected="false" type="button"><span class="nav-dot"></span>Models</button>
+    <button class="nav-item" role="tab" id="tab-clients" aria-controls="panel-clients" aria-selected="false" type="button"><span class="nav-dot"></span>Clients</button>
+    <button class="nav-item" role="tab" id="tab-reliability" aria-controls="panel-reliability" aria-selected="false" type="button"><span class="nav-dot"></span>Reliability</button>
+    <button class="nav-item" role="tab" id="tab-capacity" aria-controls="panel-capacity" aria-selected="false" type="button"><span class="nav-dot"></span>Capacity</button>
+    <p class="nav-label">Studio</p>
+    <button class="nav-item" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false" type="button"><span class="nav-dot"></span>Chat</button>
+    <button class="nav-item" role="tab" id="tab-images" aria-controls="panel-images" aria-selected="false" type="button"><span class="nav-dot"></span>Bilder</button>
+    <button class="nav-item" role="tab" id="tab-speech" aria-controls="panel-speech" aria-selected="false" type="button"><span class="nav-dot"></span>Sprache</button>
+    <p class="nav-label">System</p>
+    <button class="nav-item" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="false" type="button"><span class="nav-dot"></span>Settings</button>
+  </nav>
+  <div class="side-user">
+    <div class="avatar" id="avatarCircle">?</div>
+    <div><div id="sideUserName" style="font-weight:600">Nicht angemeldet</div><div class="muted" id="sideUserRole" style="font-size:13.5px">Bitte unten anmelden</div></div>
+  </div>
+</aside>
+<div class="content">
+<header class="topbar">
+  <div class="title" id="pageTitle">BLG Proxy · Overview</div>
+  <div class="search"><input id="navSearch" type="search" placeholder="Bereich suchen, zum Beispiel Modelle, Bilder, Keys" aria-label="Bereich suchen"></div>
+  <span class="pill" id="nowPill">Noch keine Daten</span>
 </header>
 <main>
-  <div class="panel-head">Zugang</div>
   <section class="cyber-panel" aria-labelledby="login-h">
     <h2 id="login-h">Anmeldung</h2>
     <label for="adminToken">Admin-Token</label>
@@ -99,8 +159,8 @@ audio{width:100%;margin-top:14px}
     <p class="status" id="loginStatus" role="status" aria-live="polite"></p>
   </section>
 
-  <div class="panel-head">Zeitraum für alle Auswertungen</div>
   <section class="cyber-panel" aria-label="Zeitraum">
+    <h2>Zeitraum für alle Auswertungen</h2>
     <div class="row" role="group" aria-label="Zeitraum wählen">
       <button class="btn rangeBtn" type="button" data-range="1h">1 Stunde</button>
       <button class="btn rangeBtn" type="button" data-range="6h">6 Stunden</button>
@@ -118,18 +178,18 @@ audio{width:100%;margin-top:14px}
     <p class="muted" id="rangeInfo" style="margin-top:8px">Standard: eingestellter Zeitraum (30 Tage), ab der ersten Messung.</p>
   </section>
 
-  <div class="tabs" role="tablist" aria-label="Bereiche">
-    <button class="btn" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" type="button">Overview</button>
-    <button class="btn" role="tab" id="tab-models" aria-controls="panel-models" aria-selected="false" type="button">Models</button>
-    <button class="btn" role="tab" id="tab-clients" aria-controls="panel-clients" aria-selected="false" type="button">Clients</button>
-    <button class="btn" role="tab" id="tab-reliability" aria-controls="panel-reliability" aria-selected="false" type="button">Reliability</button>
-    <button class="btn" role="tab" id="tab-capacity" aria-controls="panel-capacity" aria-selected="false" type="button">Capacity</button>
-    <button class="btn" role="tab" id="tab-images" aria-controls="panel-images" aria-selected="false" type="button">Bilder</button>
-    <button class="btn btn-ai" role="tab" id="tab-speech" aria-controls="panel-speech" aria-selected="false" type="button">Sprache</button>
-    <button class="btn" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="false" type="button">Settings</button>
-  </div>
-
   <section class="cyber-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+    <div class="hero">
+      <p class="kicker">BLG Proxy · Command Center · Live</p>
+      <p class="wordmark">BLG <span>PROXY</span></p>
+      <p class="lead">Eine API für alles. <span style="color:var(--accent)">Chat, Bilder, Sprache.</span></p>
+      <p class="sub">Sechs NVIDIA-Keys in einem fairen Pool, exaktes Tempo-Limit, Warteschlange ohne Abbrüche und jede Anfrage gemessen. Von hier steuerst du alles.</p>
+      <div class="row" style="margin-top:18px">
+        <button class="btn btn-primary" type="button" data-goto="tab-chat">Chat öffnen</button>
+        <button class="btn" type="button" data-goto="tab-images">Bild erstellen</button>
+        <button class="btn" type="button" data-goto="tab-speech">Text vorlesen</button>
+      </div>
+    </div>
     <h2>Überblick</h2>
     <div class="cards">
       <div class="card" style="text-align:center"><p class="lbl">Erfolgsrate</p><div id="ringSuccess"></div><p id="ringSuccessTxt" class="muted"></p></div>
@@ -216,6 +276,26 @@ audio{width:100%;margin-top:14px}
     </div>
     <h2>Jeder Key einzeln</h2><div id="keyMeters"></div>
     <h2>Abgelehnte Anfragen (429) pro Key</h2><div class="chart" id="chart429"></div>
+  </section>
+
+  <section class="cyber-panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+    <h2>Studio Chat</h2>
+    <p class="muted">Schreibe mit deinen Modellen über deine eine API. Antworten kommen live als Stream und können vorgelesen werden.</p>
+    <div class="row">
+      <div><label for="chatModel">Modell</label><select id="chatModel"><option value="auto">auto (bestes)</option><option value="fast">fast</option><option value="chat">chat</option><option value="code">code</option><option value="deep-think">deep-think</option><option value="vision">vision</option></select></div>
+      <div><label for="chatVoice">Vorlese-Stimme</label><select id="chatVoice"><option value="de-DE-KatjaNeural">Katja (Deutsch)</option><option value="de-DE-ConradNeural">Conrad (Deutsch)</option><option value="en-US-AvaMultilingualNeural">Ava (Englisch)</option></select></div>
+    </div>
+    <div id="chatLog" aria-live="polite"></div>
+    <label for="chatInput">Deine Nachricht</label>
+    <textarea id="chatInput" placeholder="Schreibe hier und drücke Senden">Erkläre mir in zwei Sätzen, was du kannst.</textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-primary" id="chatSendBtn" type="button">Senden</button>
+      <button class="btn" id="chatSpeakBtn" type="button">Letzte Antwort vorlesen</button>
+      <button class="btn" id="chatMicBtn" type="button">Sprechen statt tippen</button>
+      <button class="btn" id="chatClearBtn" type="button">Verlauf leeren</button>
+    </div>
+    <p class="status" id="chatStatus" role="status" aria-live="polite"></p>
+    <audio id="chatAudio" controls hidden></audio>
   </section>
 
   <section class="cyber-panel" id="panel-images" role="tabpanel" aria-labelledby="tab-images" hidden>
@@ -323,6 +403,8 @@ audio{width:100%;margin-top:14px}
     <p class="status" id="userStatus" role="status" aria-live="polite"></p>
   </section>
 </main>
+</div>
+</div>
 <script>
 const $=(id)=>document.getElementById(id);
 const COLORS=['#00f6ff','#ff00e5','#39ff14','#ffb000','#ff4d6d','#5cffff','#ff9a3c'];
@@ -334,11 +416,25 @@ const pct=(n)=>Number(n||0).toFixed(1)+' %';
 const adminHeaders=()=>({'x-admin-token':sessionStorage.getItem('blg_admin')||'','Content-Type':'application/json'});
 const clientKey=()=>sessionStorage.getItem('blg_client')||'';
 
-document.querySelectorAll('[role="tab"]').forEach((tab)=>tab.addEventListener('click',()=>{
+function gotoTab(id){
+  const tab=$(id); if(!tab) return;
   document.querySelectorAll('[role="tab"]').forEach((t)=>t.setAttribute('aria-selected','false'));
   document.querySelectorAll('[role="tabpanel"]').forEach((p)=>{p.hidden=true;});
   tab.setAttribute('aria-selected','true'); $(tab.getAttribute('aria-controls')).hidden=false;
-}));
+  $('pageTitle').textContent='BLG Proxy · '+tab.textContent.trim();
+  window.scrollTo({top:0});
+}
+document.querySelectorAll('[role="tab"]').forEach((tab)=>tab.addEventListener('click',()=>gotoTab(tab.id)));
+document.querySelectorAll('[data-goto]').forEach((btn)=>btn.addEventListener('click',()=>gotoTab(btn.getAttribute('data-goto'))));
+$('navSearch').addEventListener('input',()=>{
+  const q=$('navSearch').value.trim().toLowerCase();
+  document.querySelectorAll('[role="tab"]').forEach((tab)=>{ tab.style.display=!q||tab.textContent.toLowerCase().includes(q)?'':'none'; });
+});
+$('navSearch').addEventListener('keydown',(ev)=>{
+  if(ev.key!=='Enter') return;
+  const first=[...document.querySelectorAll('[role="tab"]')].find((tab)=>tab.style.display!=='none');
+  if(first) gotoTab(first.id);
+});
 
 async function api(path,options){
   const res=await fetch(path,Object.assign({headers:adminHeaders()},options||{}));
@@ -525,6 +621,8 @@ function renderAll(){
   if(A.history){
     $('historyInfo').textContent='Gespeicherte Messungen: '+fmt(A.history.rows)+' Zeilen, etwa '+(A.history.approxBytes/1024).toFixed(1)+' KB. Erste Messung: '+(A.history.firstSample?new Date(Number(A.history.firstSample)).toLocaleString('de-DE'):'keine')+'. Aufbewahrung: '+(A.history.retentionDays===0?'für immer':A.history.retentionDays+' Tage')+'.';
   }
+  $('nowPill').textContent='Jetzt: '+fmt(o.nowRpm||0)+' Anfragen pro Minute';
+  $('nowPill').className='pill'+((o.saturation||0)<70?' good':'');
   $('rangeInfo').textContent='Zeitraum: '+new Date(A.range.from).toLocaleString('de-DE')+' bis '+new Date(A.range.to).toLocaleString('de-DE')+(PAUSED?' · pausiert (Now-Werte laufen weiter)':' · erneuert sich alle 3 Sekunden');
 }
 
@@ -602,6 +700,7 @@ async function loadAnalytics(){
 }
 async function loadStatic(){
   O=await api('/admin/api/overview');
+  if(O.me){ $('sideUserName').textContent=O.me.name; $('sideUserRole').textContent='Rolle: '+O.me.role; $('avatarCircle').textContent=O.me.name.slice(0,1).toUpperCase(); }
   S=await api('/admin/api/settings');
   renderOverviewSide(); renderSettings();
 }
@@ -723,6 +822,61 @@ $('loadVoicesBtn').addEventListener('click',async()=>{
     if(data.voices.some((v)=>v.ShortName===cur)) $('voice').value=cur;
     $('speechStatus').textContent=data.voices.length+' Stimmen geladen.';
   }catch(e){ $('speechStatus').textContent='Fehler: '+e.message; }
+});
+let CHAT_HISTORY=[], LAST_ANSWER='';
+function chatMsg(who,text){
+  const div=document.createElement('div'); div.className='msg'+(who==='Du'?' user':'');
+  div.innerHTML='<p class="who">'+esc(who)+'</p><p></p>';
+  div.querySelector('p:last-child').textContent=text;
+  $('chatLog').appendChild(div); return div.querySelector('p:last-child');
+}
+$('chatClearBtn').addEventListener('click',()=>{ CHAT_HISTORY=[]; LAST_ANSWER=''; $('chatLog').innerHTML=''; $('chatStatus').textContent='Verlauf geleert.'; });
+$('chatSendBtn').addEventListener('click',async()=>{
+  const text=$('chatInput').value.trim();
+  if(!text){ $('chatStatus').textContent='Bitte zuerst eine Nachricht schreiben.'; return; }
+  if(!clientKey()){ $('chatStatus').textContent='Bitte oben deinen API-Key eintragen.'; return; }
+  chatMsg('Du',text);
+  CHAT_HISTORY.push({role:'user',content:text});
+  const out=chatMsg($('chatModel').value,'');
+  $('chatStatus').textContent='Antwort kommt...';
+  try{
+    const res=await fetch('/v1/chat/completions',{method:'POST',headers:{'Authorization':'Bearer '+clientKey(),'Content-Type':'application/json','X-Conversation-Id':'studio-chat'},body:JSON.stringify({model:$('chatModel').value,messages:CHAT_HISTORY,max_tokens:1024,stream:true})});
+    if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error&&d.error.message?d.error.message:('Fehler '+res.status)); }
+    const reader=res.body.getReader(), decoder=new TextDecoder(); let buf='',answer='';
+    for(;;){
+      const part=await reader.read(); if(part.done) break;
+      buf+=decoder.decode(part.value,{stream:true});
+      const lines=buf.split('\n'); buf=lines.pop()||'';
+      for(const line of lines){
+        const s=line.trim(); if(!s.startsWith('data:')||s==='data: [DONE]') continue;
+        try{ const j=JSON.parse(s.slice(5)); const delta=j.choices&&j.choices[0]&&j.choices[0].delta; const c=delta&&(delta.content||''); if(c){ answer+=c; out.textContent=answer; } }catch{}
+      }
+    }
+    LAST_ANSWER=answer||out.textContent;
+    CHAT_HISTORY.push({role:'assistant',content:LAST_ANSWER});
+    $('chatStatus').innerHTML='<span class="ok">Antwort da.</span>';
+  }catch(e){ out.textContent='Fehler: '+e.message; $('chatStatus').textContent='Fehler: '+e.message; }
+});
+async function speakText(text,voice,statusEl){
+  const res=await fetch('/v1/audio/speech',{method:'POST',headers:{'Authorization':'Bearer '+clientKey(),'Content-Type':'application/json'},body:JSON.stringify({input:text.slice(0,2000),voice})});
+  if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error&&d.error.message?d.error.message:('Fehler '+res.status)); }
+  const url=URL.createObjectURL(await res.blob());
+  $('chatAudio').src=url; $('chatAudio').hidden=false;
+  await $('chatAudio').play().catch(()=>{});
+  if(statusEl) statusEl.innerHTML='<span class="ok">Wird vorgelesen.</span>';
+}
+$('chatSpeakBtn').addEventListener('click',async()=>{
+  if(!LAST_ANSWER){ $('chatStatus').textContent='Noch keine Antwort zum Vorlesen.'; return; }
+  try{ await speakText(LAST_ANSWER,$('chatVoice').value,$('chatStatus')); }catch(e){ $('chatStatus').textContent='Fehler: '+e.message; }
+});
+$('chatMicBtn').addEventListener('click',()=>{
+  const Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Rec){ $('chatStatus').textContent='Dieser Browser kann keine Sprache erkennen. Bitte tippen.'; return; }
+  const rec=new Rec(); rec.lang='de-DE';
+  $('chatStatus').textContent='Ich höre zu. Bitte sprechen.';
+  rec.onresult=(ev)=>{ $('chatInput').value=ev.results[0][0].transcript; $('chatStatus').textContent='Erkannt. Jetzt Senden drücken.'; };
+  rec.onerror=()=>{ $('chatStatus').textContent='Nichts erkannt. Bitte noch einmal.'; };
+  rec.start();
 });
 if(sessionStorage.getItem('blg_admin')) $('adminToken').value=sessionStorage.getItem('blg_admin');
 if(sessionStorage.getItem('blg_client')) $('clientToken').value=sessionStorage.getItem('blg_client');
