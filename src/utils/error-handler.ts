@@ -89,7 +89,9 @@ export function isRetryableError(error: unknown): boolean {
  * Returns true → try next key; false → give up on this provider.
  */
 export function shouldRotateKey(statusCode: number | undefined, errorMessage?: string): boolean {
-  if (statusCode !== undefined && [429, 502, 503, 504, 408].includes(statusCode)) {
+  // 401/403: a dead or unauthorised key must not poison the whole provider —
+  // rotate to the next key, other keys may still be authorised.
+  if (statusCode !== undefined && [401, 403, 429, 502, 503, 504, 408].includes(statusCode)) {
     return true;
   }
   return isRetryableError({ message: errorMessage });

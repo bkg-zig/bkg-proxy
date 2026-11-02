@@ -1,24 +1,546 @@
 {
-  "fast": [
+  "auto": [
     {
-      "provider": "google",
-      "model": "gemini-2.0-flash-exp",
-      "apiKeys": ["GOOGLE_KEY_1"]
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "best": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
     }
   ],
   "deep-think": [
     {
-      "provider": "anthropic",
-      "model": "claude-opus-4-20250514",
-      "apiKeys": ["ANTHROPIC_KEY_1", "ANTHROPIC_KEY_2"]
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "reasoning": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "fast": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-bolt-e4b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "chat": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "code": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "poolside/laguna-xs-2.1",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "vision": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "meta/llama-3.2-90b-vision-instruct",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
     }
   ],
   "nvidia": [
     {
       "provider": "openai-compatible",
       "baseUrl": "https://integrate.api.nvidia.com/v1",
-      "model": "nvidia/llama-3.1-nemotron-70b-instruct",
-      "apiKeys": ["NVIDIA_KEY_1"]
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    },
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nemotron-ultra": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nemotron-super-vl": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nemotron-lightning": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nvidia/nemotron-3-ultra-550b-a55b": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "mistralai/mistral-large-4-1t-a52b": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "mistralai/mistral-large-4-1t-a52b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nvidia/nemotron-3.5-lightning-30b-a3b": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "nvidia/nemotron-3.5-bolt-e4b": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-3.5-bolt-e4b",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "poolside/laguna-xs-2.1": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "poolside/laguna-xs-2.1",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
+    }
+  ],
+  "meta/llama-3.2-90b-vision-instruct": [
+    {
+      "provider": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "model": "meta/llama-3.2-90b-vision-instruct",
+      "apiKeys": [
+        "NVIDIA_KEY_1",
+        "NVIDIA_KEY_2",
+        "NVIDIA_KEY_3",
+        "NVIDIA_KEY_5",
+        "NVIDIA_KEY_6",
+        "NVIDIA_KEY_7",
+        "NVIDIA_KEY_4"
+      ]
     }
   ]
 }
