@@ -162,9 +162,15 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       routes,
       clientKeys,
       upstreamKeys: Object.fromEntries(
-        ['NVIDIA_KEY_1', 'NVIDIA_KEY_2', 'NVIDIA_KEY_3', 'NVIDIA_KEY_4', 'NVIDIA_KEY_5', 'NVIDIA_KEY_6', 'NVIDIA_KEY_7'].map(
-          (name) => [name, Boolean(env[name])]
-        )
+        [
+          'NVIDIA_KEY_1',
+          'NVIDIA_KEY_2',
+          'NVIDIA_KEY_3',
+          'NVIDIA_KEY_4',
+          'NVIDIA_KEY_5',
+          'NVIDIA_KEY_6',
+          'NVIDIA_KEY_7',
+        ].map((name) => [name, Boolean(env[name])])
       ),
       proxyAuthSet: Boolean(env.PROXY_AUTH_TOKEN),
       adminKv: Boolean(env.ADMIN_KV),
@@ -292,12 +298,17 @@ async function handleImageGeneration(request: Request, env: Env): Promise<Respon
     const imageUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?${new URLSearchParams(
       { seed: String(seed), width: '1024', height: '1024', model: 'flux', nologo: 'true' }
     ).toString()}`;
-    return json({ created: Math.floor(Date.now() / 1000), model: modelName, seed, data: [{ url: imageUrl }] });
+    return json({
+      created: Math.floor(Date.now() / 1000),
+      model: modelName,
+      seed,
+      data: [{ url: imageUrl }],
+    });
   }
 
-  const cfModel = known ?? (modelName.startsWith('@cf/')
-    ? { id: modelName, contentType: 'image/png' }
-    : undefined);
+  const cfModel =
+    known ??
+    (modelName.startsWith('@cf/') ? { id: modelName, contentType: 'image/png' } : undefined);
   if (!cfModel) {
     throw new ProxyError(`Unknown image model: ${modelName}`, 400);
   }
