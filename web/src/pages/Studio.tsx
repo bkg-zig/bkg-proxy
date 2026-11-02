@@ -1,7 +1,20 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clientFetch, clientToken } from '../lib/api';
 
 interface Msg { who: string; text: string; mine?: boolean }
+
+export const GERMAN_VOICES = [
+  { value: 'de-DE-KatjaNeural', label: 'Deutsch: Katja (Frau)' },
+  { value: 'de-DE-ConradNeural', label: 'Deutsch: Conrad (Mann)' },
+  { value: 'de-DE-AmalaNeural', label: 'Deutsch: Amala (Frau)' },
+  { value: 'de-DE-KillianNeural', label: 'Deutsch: Killian (Mann)' },
+  { value: 'de-DE-SeraphinaMultilingualNeural', label: 'Deutsch: Seraphina (Frau, mehrsprachig)' },
+  { value: 'de-DE-FlorianMultilingualNeural', label: 'Deutsch: Florian (Mann, mehrsprachig)' },
+  { value: 'de-AT-IngridNeural', label: 'Österreich: Ingrid (Frau)' },
+  { value: 'de-AT-JonasNeural', label: 'Österreich: Jonas (Mann)' },
+  { value: 'de-CH-LeniNeural', label: 'Schweiz: Leni (Frau)' },
+  { value: 'de-CH-JanNeural', label: 'Schweiz: Jan (Mann)' },
+];
 
 export function ChatPage() {
   const [model, setModel] = useState('auto');
@@ -110,9 +123,8 @@ export function ChatPage() {
           </select></div>
         <div><label>Vorlese-Stimme</label>
           <select value={voice} onChange={(e) => setVoice(e.target.value)}>
-            <option value="de-DE-KatjaNeural">Katja (Deutsch)</option>
-            <option value="de-DE-ConradNeural">Conrad (Deutsch)</option>
-            <option value="en-US-AvaMultilingualNeural">Ava (Englisch)</option>
+            {GERMAN_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            <option value="en-US-AvaMultilingualNeural">Englisch: Ava</option>
           </select></div>
       </div>
       <div aria-live="polite">
@@ -233,16 +245,12 @@ export function SpeechPage() {
     }
   };
 
-  const options = voices.length
-    ? voices.map((v) => ({ value: v.ShortName, label: `${v.Locale} – ${v.ShortName} (${v.Gender})` }))
-    : [
-        { value: 'de-DE-KatjaNeural', label: 'Deutsch, Katja (Frau)' },
-        { value: 'de-DE-ConradNeural', label: 'Deutsch, Conrad (Mann)' },
-        { value: 'de-DE-AmalaNeural', label: 'Deutsch, Amala (Frau)' },
-        { value: 'de-DE-KillianNeural', label: 'Deutsch, Killian (Mann)' },
-        { value: 'en-US-AvaMultilingualNeural', label: 'Englisch, Ava (Standard)' },
-        { value: 'en-GB-SoniaNeural', label: 'Englisch GB, Sonia' },
-      ];
+  useEffect(() => {
+    if (clientToken() && !voices.length) void loadVoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const germanLoaded = voices.filter((v) => v.Locale.startsWith('de-'));
+  const restLoaded = voices.filter((v) => !v.Locale.startsWith('de-'));
 
   return (
     <>
@@ -251,8 +259,21 @@ export function SpeechPage() {
       <textarea value={text} onChange={(e) => setText(e.target.value)} />
       <label>Stimme</label>
       <select value={voice} onChange={(e) => setVoice(e.target.value)}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <optgroup label="Deutsche Stimmen">
+          {(germanLoaded.length ? germanLoaded.map((v) => ({ value: v.ShortName, label: `${v.Locale} – ${v.ShortName} (${v.Gender})` })) : GERMAN_VOICES).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </optgroup>
+        {restLoaded.length > 0 && (
+          <optgroup label="Alle anderen Stimmen">
+            {restLoaded.map((v) => (
+              <option key={v.ShortName} value={v.ShortName}>{v.Locale} – {v.ShortName} ({v.Gender})</option>
+            ))}
+          </optgroup>
+        )}
+        {!voices.length && <option value="en-US-AvaMultilingualNeural">Englisch: Ava (Standard)</option>}
       </select>
+      <p className="muted">Alle zehn deutschsprachigen Edge-Stimmen sind sofort da. Microsoft gibt für Deutsch über diesen kostenlosen Dienst nicht mehr her, die übrigen sind Azure-Bezahlstimmen und antworten hier nicht.</p>
       <div className="row" style={{ marginTop: 12 }}>
         <button className="btn btn-ai" onClick={() => void speak()}>Vorlesen</button>
         <button className="btn" onClick={() => void loadVoices()}>Alle Stimmen laden</button>

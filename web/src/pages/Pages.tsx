@@ -9,8 +9,8 @@ export function OverviewPage({ a, go }: { a: A; go: (tab: string) => void }) {
   return (
     <>
       <div className="hero">
-        <p className="kicker">BLG Proxy · Command Center · Live</p>
-        <p className="wordmark">BLG <span>PROXY</span></p>
+        <p className="kicker">BKG Proxy · Command Center · Live</p>
+        <p className="wordmark">BKG <span>PROXY</span></p>
         <p className="lead">Eine API für alles. <span style={{ color: 'var(--accent)' }}>Chat, Bilder, Sprache.</span></p>
         <p className="sub2">Sechs NVIDIA-Keys in einem fairen Pool, exaktes Tempo-Limit, Warteschlange ohne Abbrüche und jede Anfrage gemessen. Von hier steuerst du alles.</p>
         <div className="row" style={{ marginTop: 18 }}>
