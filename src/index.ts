@@ -42,7 +42,6 @@ const ALL_NVIDIA_KEYS = [
   'NVIDIA_KEY_5',
   'NVIDIA_KEY_6',
   'NVIDIA_KEY_7',
-  'NVIDIA_KEY_4',
 ];
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
@@ -188,7 +187,6 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
           'NVIDIA_KEY_1',
           'NVIDIA_KEY_2',
           'NVIDIA_KEY_3',
-          'NVIDIA_KEY_4',
           'NVIDIA_KEY_5',
           'NVIDIA_KEY_6',
           'NVIDIA_KEY_7',
