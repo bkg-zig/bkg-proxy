@@ -31,10 +31,19 @@ import {
   sha256Hex,
   Settings,
 } from './store';
-import { recordMetric, keyUsageLastMinute, routeUsageLastMinute, errorClassForStatus, wrapStreamForMetrics } from './metrics';
+import {
+  recordMetric,
+  keyUsageLastMinute,
+  routeUsageLastMinute,
+  errorClassForStatus,
+  wrapStreamForMetrics,
+} from './metrics';
 import { getAnalytics } from './analytics';
 
-interface ClientIdentity { label: string; kind: string }
+interface ClientIdentity {
+  label: string;
+  kind: string;
+}
 import { dashboardHtml } from './dashboard';
 import { createAudioStream, getVoices, DEFAULT_VOICE } from './tts/tts';
 
@@ -331,7 +340,13 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       throw new ProxyError(`Invalid settings: ${error}`, 400);
     }
     await saveSettings(env, next);
-    return json({ ok: true, settings: { ...next, users: next.users.map((u) => ({ name: u.name, createdAt: u.createdAt })) } });
+    return json({
+      ok: true,
+      settings: {
+        ...next,
+        users: next.users.map((u) => ({ name: u.name, createdAt: u.createdAt })),
+      },
+    });
   }
 
   if (request.method === 'POST' && path === '/admin/api/users') {
@@ -343,7 +358,11 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       throw new ProxyError('User already exists', 409);
     }
     const plainToken = `admusr_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
-    settings.users.push({ name, hash: await sha256Hex(plainToken), createdAt: new Date().toISOString() });
+    settings.users.push({
+      name,
+      hash: await sha256Hex(plainToken),
+      createdAt: new Date().toISOString(),
+    });
     await saveSettings(env, settings);
     return json({ ok: true, token: plainToken, user: { name } }, 201);
   }
@@ -445,7 +464,22 @@ async function handleImageGeneration(
     throw new ProxyError('Cloudflare AI binding not available', 500);
   }
   const result = await env.AI.run(cfModel.id, { prompt });
-  ctx.waitUntil(recordMetric(env, { ...metricBase, upstreamModel: cfModel.id, status: 200, outcome: 'success', errorClass: 'none', latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0 }, settings.retentionDays));
+  ctx.waitUntil(
+    recordMetric(
+      env,
+      {
+        ...metricBase,
+        upstreamModel: cfModel.id,
+        status: 200,
+        outcome: 'success',
+        errorClass: 'none',
+        latencyMs: Date.now() - startedAt,
+        ttftMs: Date.now() - startedAt,
+        generationMs: 0,
+      },
+      settings.retentionDays
+    )
+  );
   return new Response(result as BodyInit, {
     headers: { 'Content-Type': cfModel.contentType, ...CORS_HEADERS },
   });
@@ -509,14 +543,37 @@ async function handleSpeech(
         await reader.cancel(reason);
       },
     });
-    ctx.waitUntil(recordMetric(env, {
-      ts: startedAt, route: 'tts', upstreamModel: voice, client: identity.label, agent,
-      upstreamKey: '', status: 200, outcome: 'success', errorClass: 'none',
-      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
-      promptTokens: 0, completionTokens: 0, reasoningTokens: 0, toolCalls: 0, truncated: 0,
-      stream: 1, temperature: null, topP: null, maxTokens: null, messages: 1,
-      capacityTotal: totalCapacity(settings),
-    }, settings.retentionDays));
+    ctx.waitUntil(
+      recordMetric(
+        env,
+        {
+          ts: startedAt,
+          route: 'tts',
+          upstreamModel: voice,
+          client: identity.label,
+          agent,
+          upstreamKey: '',
+          status: 200,
+          outcome: 'success',
+          errorClass: 'none',
+          latencyMs: Date.now() - startedAt,
+          ttftMs: Date.now() - startedAt,
+          generationMs: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          toolCalls: 0,
+          truncated: 0,
+          stream: 1,
+          temperature: null,
+          topP: null,
+          maxTokens: null,
+          messages: 1,
+          capacityTotal: totalCapacity(settings),
+        },
+        settings.retentionDays
+      )
+    );
     return new Response(primed, {
       headers: { 'Content-Type': 'audio/mpeg', ...CORS_HEADERS },
     });
@@ -549,7 +606,10 @@ async function handleChatCompletion(
     throw new ProxyError('Invalid request: model is required', 400);
   }
   if (settings.maxTokensCap > 0) {
-    chatRequest.max_tokens = Math.min(chatRequest.max_tokens ?? settings.maxTokensCap, settings.maxTokensCap);
+    chatRequest.max_tokens = Math.min(
+      chatRequest.max_tokens ?? settings.maxTokensCap,
+      settings.maxTokensCap
+    );
   }
 
   const baseMetric = {
@@ -577,7 +637,16 @@ async function handleChatCompletion(
   // Model governor: per-model RPM limit from Settings engages before upstream.
   const limit = settings.modelLimits[chatRequest.model];
   if (limit && limit > 0 && (await routeUsageLastMinute(env, chatRequest.model)) >= limit) {
-    ctx.waitUntil(record({ status: 429, outcome: 'governor', errorClass: 'rate_limit', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
+    ctx.waitUntil(
+      record({
+        status: 429,
+        outcome: 'governor',
+        errorClass: 'rate_limit',
+        latencyMs: Date.now() - startedAt,
+        ttftMs: 0,
+        generationMs: 0,
+      })
+    );
     throw new ProxyError(`Model limit reached for ${chatRequest.model} (${limit}/min)`, 429);
   }
 
@@ -608,27 +677,43 @@ async function handleChatCompletion(
 
   if (!response.success) {
     const status = response.statusCode || 500;
-    ctx.waitUntil(record({
-      status, outcome: 'upstream_error', errorClass: errorClassForStatus(status),
-      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
-      latencyMs, ttftMs: latencyMs, generationMs: 0,
-    }));
+    ctx.waitUntil(
+      record({
+        status,
+        outcome: 'upstream_error',
+        errorClass: errorClassForStatus(status),
+        upstreamModel: response.upstreamModel ?? '',
+        upstreamKey: response.keyUsed ?? '',
+        latencyMs,
+        ttftMs: latencyMs,
+        generationMs: 0,
+      })
+    );
     throw new ProxyError(response.error || 'All providers failed', status);
   }
 
   if (response.stream) {
-    const wrapped = wrapStreamForMetrics(response.stream, (stats, totalMs) => {
-      void record({
-        status: 200, outcome: 'success', errorClass: 'none',
-        upstreamModel: stats.upstreamModel || response.upstreamModel || '',
-        upstreamKey: response.keyUsed ?? '',
-        latencyMs: totalMs, ttftMs: stats.ttftMs || totalMs,
-        generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
-        promptTokens: stats.promptTokens, completionTokens: stats.completionTokens,
-        reasoningTokens: stats.reasoningTokens, toolCalls: stats.toolCalls,
-        truncated: stats.truncated,
-      });
-    }, startedAt);
+    const wrapped = wrapStreamForMetrics(
+      response.stream,
+      (stats, totalMs) => {
+        void record({
+          status: 200,
+          outcome: 'success',
+          errorClass: 'none',
+          upstreamModel: stats.upstreamModel || response.upstreamModel || '',
+          upstreamKey: response.keyUsed ?? '',
+          latencyMs: totalMs,
+          ttftMs: stats.ttftMs || totalMs,
+          generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
+          promptTokens: stats.promptTokens,
+          completionTokens: stats.completionTokens,
+          reasoningTokens: stats.reasoningTokens,
+          toolCalls: stats.toolCalls,
+          truncated: stats.truncated,
+        });
+      },
+      startedAt
+    );
     return new Response(wrapped, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -639,18 +724,35 @@ async function handleChatCompletion(
     });
   }
 
-  const usage = (response.response as { usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } } | undefined)?.usage;
+  const usage = (
+    response.response as
+      | {
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            completion_tokens_details?: { reasoning_tokens?: number };
+          };
+        }
+      | undefined
+  )?.usage;
   const choice = response.response?.choices?.[0];
-  ctx.waitUntil(record({
-    status: 200, outcome: 'success', errorClass: 'none',
-    upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
-    latencyMs, ttftMs: latencyMs, generationMs: 0,
-    promptTokens: usage?.prompt_tokens ?? 0,
-    completionTokens: usage?.completion_tokens ?? 0,
-    reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
-    toolCalls: choice?.message?.tool_calls?.length ?? 0,
-    truncated: choice?.finish_reason === 'length' ? 1 : 0,
-  }));
+  ctx.waitUntil(
+    record({
+      status: 200,
+      outcome: 'success',
+      errorClass: 'none',
+      upstreamModel: response.upstreamModel ?? '',
+      upstreamKey: response.keyUsed ?? '',
+      latencyMs,
+      ttftMs: latencyMs,
+      generationMs: 0,
+      promptTokens: usage?.prompt_tokens ?? 0,
+      completionTokens: usage?.completion_tokens ?? 0,
+      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      toolCalls: choice?.message?.tool_calls?.length ?? 0,
+      truncated: choice?.finish_reason === 'length' ? 1 : 0,
+    })
+  );
   return json(response.response);
 }
 
@@ -676,7 +778,9 @@ async function handleAnthropicChat(
   }
 
   console.log(`[AnthropicHandler] model=${body.model} stream=${body.stream || false}`);
-  void identity; void agent; void ctx;
+  void identity;
+  void agent;
+  void ctx;
 
   const router = new Router(env, await loadEffectiveRoutes(env, settings), {
     settings,
@@ -836,7 +940,11 @@ async function verifyAuth(
   const token = extractToken(request);
   if (!token) return null;
 
-  if (settings.authMode !== 'keys' && env.PROXY_AUTH_TOKEN && constantTimeEqual(token, env.PROXY_AUTH_TOKEN)) {
+  if (
+    settings.authMode !== 'keys' &&
+    env.PROXY_AUTH_TOKEN &&
+    constantTimeEqual(token, env.PROXY_AUTH_TOKEN)
+  ) {
     return { label: 'Master', kind: 'master' };
   }
   if (settings.authMode !== 'master') {

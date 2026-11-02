@@ -33,8 +33,9 @@ export async function ensureSchema(env: Env): Promise<boolean> {
   if (schemaReady) return true;
   const db = env.DB;
   try {
-    await db.prepare(
-      `CREATE TABLE IF NOT EXISTS requests (
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS requests (
         ts INTEGER NOT NULL, route TEXT, upstream_model TEXT, client TEXT, agent TEXT,
         upstream_key TEXT, status INTEGER, outcome TEXT, error_class TEXT,
         latency_ms INTEGER, ttft_ms INTEGER, generation_ms INTEGER,
@@ -43,7 +44,8 @@ export async function ensureSchema(env: Env): Promise<boolean> {
         temperature REAL, top_p REAL, max_tokens INTEGER, messages INTEGER,
         capacity_total INTEGER
       )`
-    ).run();
+      )
+      .run();
     await db.prepare('CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts)').run();
     schemaReady = true;
     return true;
@@ -53,11 +55,7 @@ export async function ensureSchema(env: Env): Promise<boolean> {
   }
 }
 
-export async function recordMetric(
-  env: Env,
-  row: MetricRow,
-  retentionDays: number
-): Promise<void> {
+export async function recordMetric(env: Env, row: MetricRow, retentionDays: number): Promise<void> {
   try {
     if (!(await ensureSchema(env)) || !env.DB) return;
     await env.DB.prepare(

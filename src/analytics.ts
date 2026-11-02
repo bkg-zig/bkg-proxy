@@ -50,13 +50,11 @@ export async function resolveRange(
 
 type Row = Record<string, number | string | null>;
 
-async function all(
-  env: Env,
-  sql: string,
-  ...binds: Array<number | string>
-): Promise<Row[]> {
+async function all(env: Env, sql: string, ...binds: Array<number | string>): Promise<Row[]> {
   if (!env.DB) return [];
-  const result = await env.DB.prepare(sql).bind(...binds).all<Row>();
+  const result = await env.DB.prepare(sql)
+    .bind(...binds)
+    .all<Row>();
   return result.results ?? [];
 }
 
@@ -206,7 +204,11 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
     to
   );
 
-  const nowRows = await all(env, 'SELECT COUNT(*) AS c FROM requests WHERE ts >= ?', Date.now() - 60_000);
+  const nowRows = await all(
+    env,
+    'SELECT COUNT(*) AS c FROM requests WHERE ts >= ?',
+    Date.now() - 60_000
+  );
   const nowRpm = Number(nowRows[0]?.c ?? 0);
 
   const peakRows = await all(
@@ -234,7 +236,11 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
     health: [
       { name: 'Worker', ok: true, detail: 'responding' },
       { name: 'Metrics DB (D1)', ok: true, detail: `${historyCount} samples` },
-      { name: 'Config (KV)', ok: Boolean(env.ADMIN_KV), detail: env.ADMIN_KV ? 'bound' : 'missing' },
+      {
+        name: 'Config (KV)',
+        ok: Boolean(env.ADMIN_KV),
+        detail: env.ADMIN_KV ? 'bound' : 'missing',
+      },
       { name: 'Images (Workers AI)', ok: Boolean(env.AI), detail: env.AI ? 'bound' : 'missing' },
       {
         name: 'NVIDIA keys',
@@ -264,7 +270,12 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
       capacityNow,
       saturation: capacityNow ? (nowRpm / capacityNow) * 100 : 0,
     },
-    series: { requests: requestSeries, outcomes: outcomeSeries, models: modelSeries, rate429: rate429Series },
+    series: {
+      requests: requestSeries,
+      outcomes: outcomeSeries,
+      models: modelSeries,
+      rate429: rate429Series,
+    },
     models,
     clients,
     reliability: {
@@ -275,7 +286,9 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
       errorBudgetRemaining: Math.max(errorBudgetTotal - errors, 0),
       latency: {
         queueMs: Math.max(
-          Number(totals.avgLatency ?? 0) - Number(totals.avgTtft ?? 0) - Number(totals.avgGeneration ?? 0),
+          Number(totals.avgLatency ?? 0) -
+            Number(totals.avgTtft ?? 0) -
+            Number(totals.avgGeneration ?? 0),
           0
         ),
         ttftMs: Number(totals.avgTtft ?? 0),

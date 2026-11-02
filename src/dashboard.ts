@@ -686,4 +686,3 @@ if(sessionStorage.getItem('blg_client')) $('clientToken').value=sessionStorage.g
 </html>
 `;
 }
-

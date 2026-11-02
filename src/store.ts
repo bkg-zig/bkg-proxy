@@ -18,10 +18,7 @@ export async function sha256Hex(text: string): Promise<string> {
 }
 
 /** Effective routes: KV override (admin dashboard) > ROUTES_CONFIG env > bundled routes.json. */
-export async function loadEffectiveRoutes(
-  env: Env,
-  settings?: Settings
-): Promise<RouteConfig> {
+export async function loadEffectiveRoutes(env: Env, settings?: Settings): Promise<RouteConfig> {
   let routes: RouteConfig | null = null;
   if (env.ADMIN_KV) {
     try {
@@ -54,8 +51,7 @@ export async function loadEffectiveRoutes(
     const cloned: RouteConfig = {};
     for (const [name, providers] of Object.entries(routes)) {
       cloned[name] = providers.map((p) =>
-        p.provider === 'openai-compatible' &&
-        p.baseUrl === 'https://integrate.api.nvidia.com/v1'
+        p.provider === 'openai-compatible' && p.baseUrl === 'https://integrate.api.nvidia.com/v1'
           ? { ...p, baseUrl: settings.upstreamUrl }
           : p
       );
@@ -210,7 +206,8 @@ export function validateSettings(input: Settings): string | null {
     if (!(Number.isFinite(rpm) && rpm >= 0)) return `keyRpm for ${key} must be 0 or positive`;
   }
   for (const [model, rpm] of Object.entries(input.modelLimits)) {
-    if (!(Number.isFinite(rpm) && rpm >= 0)) return `model limit for ${model} must be 0 or positive`;
+    if (!(Number.isFinite(rpm) && rpm >= 0))
+      return `model limit for ${model} must be 0 or positive`;
   }
   return null;
 }
@@ -227,10 +224,7 @@ export function totalCapacity(settings: Settings): number {
   );
 }
 
-export async function findClientKey(
-  env: Env,
-  token: string
-): Promise<ClientKeyRecord | null> {
+export async function findClientKey(env: Env, token: string): Promise<ClientKeyRecord | null> {
   if (!env.ADMIN_KV || !token.startsWith('blg_')) return null;
   const hash = await sha256Hex(token);
   const keys = await listClientKeys(env);
