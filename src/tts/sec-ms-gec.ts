@@ -18,37 +18,31 @@ const TOKEN_WINDOW_SECONDS = 300;
 
 // FIPS 180-4 initial hash value.
 const SHA256_INITIAL = [
-  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
-  0x1f83d9ab, 0x5be0cd19,
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 // Working variables after rounds 0-13 of the first block.
 const SHA256_PREFIX_STATE = [
-  0xfd9fbea2, 0x91243ce7, 0xbe499094, 0xcd2e1e0a, 0x6c006f49, 0x04bd35ab,
-  0xfeb0a7e4, 0x03effbd2,
+  0xfd9fbea2, 0x91243ce7, 0xbe499094, 0xcd2e1e0a, 0x6c006f49, 0x04bd35ab, 0xfeb0a7e4, 0x03effbd2,
 ];
 // Contribution of message words 0-13 to the schedule words 16-29.
 const SHA256_PREFIX_SCHEDULE = [
-  0xeb24bf9e, 0x1558691f, 0xa0c09ee2, 0x0cfa32ba, 0xa622ee8c, 0xd1dd9491,
-  0xc0dd25a0, 0xf9e70ab6, 0xf0c31573, 0x7058ce4e, 0x7188e606, 0x00e5ab33,
-  0xd258b060, 0x72766564,
+  0xeb24bf9e, 0x1558691f, 0xa0c09ee2, 0x0cfa32ba, 0xa622ee8c, 0xd1dd9491, 0xc0dd25a0, 0xf9e70ab6,
+  0xf0c31573, 0x7058ce4e, 0x7188e606, 0x00e5ab33, 0xd258b060, 0x72766564,
 ];
 const SHA256_ROUND_CONSTANTS = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
-  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 // Round 14 constant plus the prefix byte 0x2E at the top of word 14.
 const SHA256_ROUND_14_ADJUSTMENT = 0xc9dc06a7;
-const SHA256_PREFIX_BLOCK_CONSTANTS = SHA256_ROUND_CONSTANTS.map(
-  (constant, index) => (index === 14 ? SHA256_ROUND_14_ADJUSTMENT : constant)
+const SHA256_PREFIX_BLOCK_CONSTANTS = SHA256_ROUND_CONSTANTS.map((constant, index) =>
+  index === 14 ? SHA256_ROUND_14_ADJUSTMENT : constant
 );
 // sigma0(0x2E000000) and sigma1(0x2E000000).
 const SHA256_SIGMA0_ADJUSTMENT = 0x059c0b80;
@@ -101,13 +95,8 @@ function expandSchedule(words: number[], firstWord = 16) {
   }
 }
 
-function compress(
-  state: readonly number[],
-  words: readonly number[],
-  firstRound = 0
-) {
-  const constants =
-    firstRound === 14 ? SHA256_PREFIX_BLOCK_CONSTANTS : SHA256_ROUND_CONSTANTS;
+function compress(state: readonly number[], words: readonly number[], firstRound = 0) {
+  const constants = firstRound === 14 ? SHA256_PREFIX_BLOCK_CONSTANTS : SHA256_ROUND_CONSTANTS;
   let [a, b, c, d, e, f, g, h] = state;
 
   for (let index = firstRound; index < 64; index += 1) {
@@ -118,9 +107,7 @@ function compress(
         constants[index] +
         words[index]) >>>
       0;
-    const t2 =
-      ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) | (c & (a | b)))) >>>
-      0;
+    const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) | (c & (a | b)))) >>> 0;
     h = g;
     g = f;
     f = e;
@@ -138,13 +125,7 @@ function compress(
 function prefixBlockState(payload: Uint8Array) {
   const words = new Array<number>(14).fill(0);
   words.push((payload[0] << 16) | (payload[1] << 8) | payload[2]);
-  words.push(
-    ((payload[3] << 24) |
-      (payload[4] << 16) |
-      (payload[5] << 8) |
-      payload[6]) >>>
-      0
-  );
+  words.push(((payload[3] << 24) | (payload[4] << 16) | (payload[5] << 8) | payload[6]) >>> 0);
 
   for (let index = 16; index < 30; index += 1) {
     let value =
@@ -178,7 +159,7 @@ function prefixBlockState(payload: Uint8Array) {
 
 function sha256Digest(payload: Uint8Array) {
   if (payload.length < 7) {
-    throw new Error("Sec-MS-GEC payload must contain at least seven bytes");
+    throw new Error('Sec-MS-GEC payload must contain at least seven bytes');
   }
 
   const messageLength = 57 + payload.length;
@@ -226,17 +207,10 @@ function cs64Words(payload: Uint8Array) {
 }
 
 function cs64Digest(payload: Uint8Array, digest: Uint8Array) {
-  const digestView = new DataView(
-    digest.buffer,
-    digest.byteOffset,
-    digest.byteLength
-  );
+  const digestView = new DataView(digest.buffer, digest.byteOffset, digest.byteLength);
   const keyA = (digestView.getUint32(0, true) | 1) >>> 0;
   const keyB = (digestView.getUint32(4, true) | 1) >>> 0;
-  const factors = [
-    Math.imul(keyA, CS64_FACTOR) >>> 0,
-    Math.imul(keyB, CS64_FACTOR) >>> 0,
-  ];
+  const factors = [Math.imul(keyA, CS64_FACTOR) >>> 0, Math.imul(keyB, CS64_FACTOR) >>> 0];
 
   const terms = CS64_COEFFICIENTS.map(
     ([coefficient], index) => Math.imul(coefficient, factors[index % 2]) >>> 0
@@ -288,8 +262,8 @@ function cs64Digest(payload: Uint8Array, digest: Uint8Array) {
 
 function toHex(bytes: Uint8Array) {
   return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
     .toUpperCase();
 }
 
@@ -298,17 +272,12 @@ export function hashSecMsGecPayload(payload: string) {
   const digest = sha256Digest(bytes);
   const checksum = new Uint8Array(8);
   const checksumView = new DataView(checksum.buffer);
-  cs64Digest(bytes, digest).forEach((word, index) =>
-    checksumView.setUint32(index * 4, word, true)
-  );
+  cs64Digest(bytes, digest).forEach((word, index) => checksumView.setUint32(index * 4, word, true));
 
   return `${toHex(checksum)}-${toHex(digest)}`;
 }
 
-export function generateSecMsGec(
-  trustedClientToken: string,
-  unixSeconds = Date.now() / 1000
-) {
+export function generateSecMsGec(trustedClientToken: string, unixSeconds = Date.now() / 1000) {
   let ticks = unixSeconds + WIN_EPOCH_SECONDS;
   ticks -= ticks % TOKEN_WINDOW_SECONDS;
   ticks *= 1e7;

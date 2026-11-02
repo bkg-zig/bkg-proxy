@@ -114,16 +114,10 @@ export default {
       }
 
       // Speech (Microsoft Edge TTS) — OpenAI-style and upstream-style
-      if (
-        request.method === 'POST' &&
-        (path === '/v1/audio/speech' || path === '/tts')
-      ) {
+      if (request.method === 'POST' && (path === '/v1/audio/speech' || path === '/tts')) {
         return await handleSpeech(request);
       }
-      if (
-        request.method === 'GET' &&
-        (path === '/v1/audio/voices' || path === '/voices')
-      ) {
+      if (request.method === 'GET' && (path === '/v1/audio/voices' || path === '/voices')) {
         try {
           const voices = await getVoices();
           return json({

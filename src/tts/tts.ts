@@ -1,40 +1,39 @@
 // Ported from DIYgod/cloudflare-edge-tts (worker-native Microsoft Edge TTS).
-import { generateSecMsGec } from "./sec-ms-gec";
+import { generateSecMsGec } from './sec-ms-gec';
 
-export const DEFAULT_VOICE = "en-US-AvaMultilingualNeural";
+export const DEFAULT_VOICE = 'en-US-AvaMultilingualNeural';
 
-const READALOUD_BASE =
-  "speech.platform.bing.com/consumer/speech/synthesize/readaloud";
-const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+const READALOUD_BASE = 'speech.platform.bing.com/consumer/speech/synthesize/readaloud';
+const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 const VOICE_LIST_URL = `https://${READALOUD_BASE}/voices/list?trustedclienttoken=${TRUSTED_CLIENT_TOKEN}`;
 const SYNTHESIS_URL = `https://${READALOUD_BASE}/edge/v1`;
-const CHROMIUM_FULL_VERSION = "143.0.3650.75";
-const CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split(".")[0];
+const CHROMIUM_FULL_VERSION = '143.0.3650.75';
+const CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split('.')[0];
 const SEC_MS_GEC_VERSION = `2-${CHROMIUM_FULL_VERSION}`;
 
 const BASE_HEADERS = {
-  "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/${CHROMIUM_MAJOR_VERSION}.0.0.0`,
-  "Accept-Language": "en-US,en;q=0.9",
+  'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/${CHROMIUM_MAJOR_VERSION}.0.0.0`,
+  'Accept-Language': 'en-US,en;q=0.9',
 };
 
 const UPGRADE_HEADERS = {
   ...BASE_HEADERS,
-  "Accept-Encoding": "gzip, deflate, br, zstd",
-  Pragma: "no-cache",
-  "Cache-Control": "no-cache",
-  "Sec-WebSocket-Version": "13",
-  Upgrade: "websocket",
+  'Accept-Encoding': 'gzip, deflate, br, zstd',
+  Pragma: 'no-cache',
+  'Cache-Control': 'no-cache',
+  'Sec-WebSocket-Version': '13',
+  Upgrade: 'websocket',
 };
 
 const VOICE_HEADERS = {
   ...BASE_HEADERS,
-  Authority: "speech.platform.bing.com",
-  "Sec-CH-UA": `" Not;A Brand";v="99", "Microsoft Edge";v="${CHROMIUM_MAJOR_VERSION}", "Chromium";v="${CHROMIUM_MAJOR_VERSION}"`,
-  "Sec-CH-UA-Mobile": "?0",
-  Accept: "*/*",
-  "Sec-Fetch-Site": "none",
-  "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Dest": "empty",
+  Authority: 'speech.platform.bing.com',
+  'Sec-CH-UA': `" Not;A Brand";v="99", "Microsoft Edge";v="${CHROMIUM_MAJOR_VERSION}", "Chromium";v="${CHROMIUM_MAJOR_VERSION}"`,
+  'Sec-CH-UA-Mobile': '?0',
+  Accept: '*/*',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Dest': 'empty',
 };
 
 export type Voice = {
@@ -89,10 +88,10 @@ function normalizeVoiceName(voice: string) {
   const [, lang] = shortMatch;
   let [, , region, name] = shortMatch;
 
-  if (name.includes("-")) {
-    const [regionSuffix, ...nameParts] = name.split("-");
+  if (name.includes('-')) {
+    const [regionSuffix, ...nameParts] = name.split('-');
     region += `-${regionSuffix}`;
-    name = nameParts.join("-");
+    name = nameParts.join('-');
   }
 
   return `Microsoft Server Speech Text to Speech Voice (${lang}-${region}, ${name})`;
@@ -100,48 +99,48 @@ function normalizeVoiceName(voice: string) {
 
 function escapeXml(text: string) {
   return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function removeInvalidXmlCharacters(text: string) {
   return text.replace(
     // eslint-disable-next-line no-control-regex
     /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g,
-    " "
+    ' '
   );
 }
 
 function makeConnectionId(runtime: TtsRuntime) {
-  return runtime.crypto.randomUUID().replace(/-/g, "");
+  return runtime.crypto.randomUUID().replace(/-/g, '');
 }
 
 function makeMuid(runtime: TtsRuntime) {
   const bytes = new Uint8Array(16);
   runtime.crypto.getRandomValues(bytes);
   return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
     .toUpperCase();
 }
 
 function buildSynthesisUrl(secMsGec: string, connectionId: string) {
   const url = new URL(SYNTHESIS_URL);
-  url.searchParams.set("TrustedClientToken", TRUSTED_CLIENT_TOKEN);
-  url.searchParams.set("Sec-MS-GEC", secMsGec);
-  url.searchParams.set("Sec-MS-GEC-Version", SEC_MS_GEC_VERSION);
-  url.searchParams.set("ConnectionId", connectionId);
+  url.searchParams.set('TrustedClientToken', TRUSTED_CLIENT_TOKEN);
+  url.searchParams.set('Sec-MS-GEC', secMsGec);
+  url.searchParams.set('Sec-MS-GEC-Version', SEC_MS_GEC_VERSION);
+  url.searchParams.set('ConnectionId', connectionId);
   return url.toString();
 }
 
 function buildSpeechConfigMessage() {
   return (
     `X-Timestamp:${timestamp()}\r\n` +
-    "Content-Type:application/json; charset=utf-8\r\n" +
-    "Path:speech.config\r\n\r\n" +
+    'Content-Type:application/json; charset=utf-8\r\n' +
+    'Path:speech.config\r\n\r\n' +
     '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n'
   );
 }
@@ -155,25 +154,24 @@ function buildSsmlMessage(requestId: string, voice: string, text: string) {
 
   return (
     `X-RequestId:${requestId}\r\n` +
-    "Content-Type:application/ssml+xml\r\n" +
+    'Content-Type:application/ssml+xml\r\n' +
     `X-Timestamp:${timestamp()}Z\r\n` +
-    "Path:ssml\r\n\r\n" +
+    'Path:ssml\r\n\r\n' +
     ssml
   );
 }
 
 function timestamp() {
-  return new Date().toISOString().replace(/[-:.]/g, "").slice(0, -1);
+  return new Date().toISOString().replace(/[-:.]/g, '').slice(0, -1);
 }
 
 function parseTextHeaders(message: string) {
-  const separator = message.indexOf("\r\n\r\n");
-  const headerText =
-    separator >= 0 ? message.slice(0, separator) : message;
+  const separator = message.indexOf('\r\n\r\n');
+  const headerText = separator >= 0 ? message.slice(0, separator) : message;
   const headers: Record<string, string> = {};
 
-  for (const line of headerText.split("\r\n")) {
-    const colonIndex = line.indexOf(":");
+  for (const line of headerText.split('\r\n')) {
+    const colonIndex = line.indexOf(':');
     if (colonIndex <= 0) {
       continue;
     }
@@ -188,21 +186,19 @@ function parseTextHeaders(message: string) {
 
 function parseBinaryAudioFrame(data: Uint8Array) {
   if (data.length < 2) {
-    throw new Error("binary websocket frame missing header length");
+    throw new Error('binary websocket frame missing header length');
   }
 
   const headerLength = (data[0] << 8) | data[1];
   if (data.length < 2 + headerLength) {
-    throw new Error("binary websocket frame truncated");
+    throw new Error('binary websocket frame truncated');
   }
 
-  const headerText = new TextDecoder().decode(
-    data.slice(2, 2 + headerLength)
-  );
+  const headerText = new TextDecoder().decode(data.slice(2, 2 + headerLength));
   const headers: Record<string, string> = {};
 
-  for (const line of headerText.split("\r\n")) {
-    const colonIndex = line.indexOf(":");
+  for (const line of headerText.split('\r\n')) {
+    const colonIndex = line.indexOf(':');
     if (colonIndex <= 0) {
       continue;
     }
@@ -227,7 +223,7 @@ function toUint8Array(data: unknown): Promise<Uint8Array> | Uint8Array | null {
     return new Uint8Array(data);
   }
 
-  if (typeof Blob !== "undefined" && data instanceof Blob) {
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
     return data.arrayBuffer().then((buffer) => new Uint8Array(buffer));
   }
 
@@ -240,10 +236,10 @@ function toError(error: unknown) {
   }
 
   if (
-    typeof error === "object" &&
+    typeof error === 'object' &&
     error !== null &&
-    "message" in error &&
-    typeof (error as { message: unknown }).message === "string"
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
   ) {
     return new Error((error as { message: string }).message);
   }
@@ -262,9 +258,9 @@ function createReadableAudioStream(
   let settled = false;
 
   const cleanup = () => {
-    socket.removeEventListener("message", onMessage);
-    socket.removeEventListener("close", onClose);
-    socket.removeEventListener("error", onError);
+    socket.removeEventListener('message', onMessage);
+    socket.removeEventListener('close', onClose);
+    socket.removeEventListener('error', onError);
   };
 
   const finishWithError = (error: unknown) => {
@@ -294,10 +290,10 @@ function createReadableAudioStream(
 
     const data = (event as MessageEvent).data;
 
-    if (typeof data === "string") {
+    if (typeof data === 'string') {
       const headers = parseTextHeaders(data);
       const path = headers.Path;
-      if (path === "turn.end") {
+      if (path === 'turn.end') {
         try {
           socket.close();
         } catch {
@@ -306,11 +302,7 @@ function createReadableAudioStream(
         return;
       }
 
-      if (
-        path === "response" ||
-        path === "turn.start" ||
-        path === "audio.metadata"
-      ) {
+      if (path === 'response' || path === 'turn.start' || path === 'audio.metadata') {
         return;
       }
 
@@ -320,7 +312,7 @@ function createReadableAudioStream(
 
     const maybeBinary = toUint8Array(data);
     if (!maybeBinary) {
-      finishWithError(new Error("unsupported websocket message type"));
+      finishWithError(new Error('unsupported websocket message type'));
       return;
     }
 
@@ -330,18 +322,16 @@ function createReadableAudioStream(
       }
 
       const { headers, body } = parseBinaryAudioFrame(binary);
-      if (headers.Path !== "audio") {
+      if (headers.Path !== 'audio') {
         throw new Error(`unexpected websocket binary path: ${headers.Path}`);
       }
 
-      if (headers["Content-Type"] !== "audio/mpeg") {
+      if (headers['Content-Type'] !== 'audio/mpeg') {
         if (body.length === 0) {
           return;
         }
 
-        throw new Error(
-          `unexpected websocket binary content type: ${headers["Content-Type"]}`
-        );
+        throw new Error(`unexpected websocket binary content type: ${headers['Content-Type']}`);
       }
 
       audioReceived = true;
@@ -364,7 +354,7 @@ function createReadableAudioStream(
 
   const onClose = () => {
     if (!audioReceived) {
-      finishWithError(new Error("no audio received"));
+      finishWithError(new Error('no audio received'));
       return;
     }
 
@@ -378,9 +368,9 @@ function createReadableAudioStream(
   return new ReadableStream<Uint8Array>({
     start(controller) {
       controllerRef = controller;
-      socket.addEventListener("message", onMessage);
-      socket.addEventListener("close", onClose);
-      socket.addEventListener("error", onError);
+      socket.addEventListener('message', onMessage);
+      socket.addEventListener('close', onClose);
+      socket.addEventListener('error', onError);
       socket.accept();
       socket.send(buildSpeechConfigMessage());
       socket.send(buildSsmlMessage(requestId, voice, text));
@@ -389,7 +379,7 @@ function createReadableAudioStream(
       cleanup();
       settled = true;
       try {
-        socket.close(1000, typeof reason === "string" ? reason : "cancelled");
+        socket.close(1000, typeof reason === 'string' ? reason : 'cancelled');
       } catch {
         // ignore close failures during cancellation
       }
@@ -423,9 +413,7 @@ export async function createAudioStream(
   );
 }
 
-export async function getVoices(
-  runtime: TtsRuntime = defaultRuntime()
-): Promise<Voice[]> {
+export async function getVoices(runtime: TtsRuntime = defaultRuntime()): Promise<Voice[]> {
   const secMsGec = generateSecMsGec(TRUSTED_CLIENT_TOKEN);
   const url = `${VOICE_LIST_URL}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=${SEC_MS_GEC_VERSION}`;
   const response = await runtime.fetch(url, {
