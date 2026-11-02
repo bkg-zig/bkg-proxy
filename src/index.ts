@@ -26,6 +26,7 @@ import {
   isClientKey,
 } from './store';
 import { dashboardHtml } from './dashboard';
+import { createAudioStream, getVoices, DEFAULT_VOICE } from './tts/tts';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -110,6 +111,33 @@ export default {
       // Image generation — POST only
       if (request.method === 'POST' && path === '/v1/images/generations') {
         return await handleImageGeneration(request, env);
+      }
+
+      // Speech (Microsoft Edge TTS) — OpenAI-style and upstream-style
+      if (
+        request.method === 'POST' &&
+        (path === '/v1/audio/speech' || path === '/tts')
+      ) {
+        return await handleSpeech(request);
+      }
+      if (
+        request.method === 'GET' &&
+        (path === '/v1/audio/voices' || path === '/voices')
+      ) {
+        try {
+          const voices = await getVoices();
+          return json({
+            voices: voices.map((v) => ({
+              ShortName: v.ShortName,
+              Locale: v.Locale,
+              Gender: v.Gender,
+              FriendlyName: v.FriendlyName,
+            })),
+          });
+        } catch (error) {
+          console.error('[TTS] voice list failed:', error);
+          throw new ProxyError('Failed to fetch voices', 502);
+        }
       }
 
       // Anthropic-format chat completions — POST only
@@ -319,6 +347,65 @@ async function handleImageGeneration(request: Request, env: Env): Promise<Respon
   return new Response(result as BodyInit, {
     headers: { 'Content-Type': cfModel.contentType, ...CORS_HEADERS },
   });
+}
+
+// =============================================================================
+// Speech handler (Edge TTS)
+// =============================================================================
+
+async function handleSpeech(request: Request): Promise<Response> {
+  const body = (await request.json()) as {
+    input?: string;
+    text?: string;
+    voice?: string;
+  };
+  const text = (body.input ?? body.text ?? '').trim();
+  if (!text) {
+    throw new ProxyError('Invalid request: text/input is required', 400);
+  }
+  if (text.length > 2000) {
+    throw new ProxyError('Invalid request: text too long (max 2000)', 400);
+  }
+  const voice = body.voice?.trim() || DEFAULT_VOICE;
+  try {
+    const stream = await createAudioStream({ text, voice });
+    // Prime the first chunk so upstream failures surface as 502, not a broken stream
+    const reader = stream.getReader();
+    const first = await reader.read();
+    let firstConsumed = false;
+    const primed = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          if (!firstConsumed) {
+            firstConsumed = true;
+            if (first.done) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(first.value);
+            return;
+          }
+          const chunk = await reader.read();
+          if (chunk.done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(chunk.value);
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        await reader.cancel(reason);
+      },
+    });
+    return new Response(primed, {
+      headers: { 'Content-Type': 'audio/mpeg', ...CORS_HEADERS },
+    });
+  } catch (error) {
+    console.error('[TTS] synthesis failed:', error);
+    throw new ProxyError('Failed to synthesize audio', 502);
+  }
 }
 
 // =============================================================================
