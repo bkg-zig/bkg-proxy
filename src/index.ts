@@ -41,13 +41,7 @@ import {
   wrapStreamForMetrics,
 } from './metrics';
 import { getAnalytics } from './analytics';
-import {
-  slotCounts,
-  joinQueue,
-  queueHeartbeat,
-  isQueueHead,
-  leaveQueue,
-} from './limiter';
+import { slotCounts, joinQueue, queueHeartbeat, isQueueHead, leaveQueue } from './limiter';
 
 interface ClientIdentity {
   label: string;
@@ -398,7 +392,8 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
     };
     let plainToken: string | undefined;
     if (body.password) {
-      if (body.password.length < 8) throw new ProxyError('Password must be at least 8 characters', 400);
+      if (body.password.length < 8)
+        throw new ProxyError('Password must be at least 8 characters', 400);
       user.passwordHash = await hashPassword(body.password);
     } else {
       plainToken = `admusr_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
@@ -674,13 +669,18 @@ async function handleChatCompletion(
     throw new ProxyError('Invalid request: model is required', 400);
   }
   if (settings.maxTokensCap > 0) {
-    chatRequest.max_tokens = Math.min(chatRequest.max_tokens ?? settings.maxTokensCap, settings.maxTokensCap);
+    chatRequest.max_tokens = Math.min(
+      chatRequest.max_tokens ?? settings.maxTokensCap,
+      settings.maxTokensCap
+    );
   }
 
   // Optional absolute deadline for the whole request (queue + retries + upstream).
   const deadlineHeader = Number(request.headers.get('X-Nim-Proxy-Deadline-Ms') ?? '');
   const overallDeadline =
-    Number.isFinite(deadlineHeader) && deadlineHeader > 0 ? startedAt + deadlineHeader : startedAt + 300_000;
+    Number.isFinite(deadlineHeader) && deadlineHeader > 0
+      ? startedAt + deadlineHeader
+      : startedAt + 300_000;
   const queueDeadline = Math.min(
     overallDeadline,
     startedAt + (settings.maxWaitSec > 0 ? settings.maxWaitSec * 1000 : 120_000)
@@ -738,7 +738,16 @@ async function handleChatCompletion(
   // Model governor: hard per-model RPM limit from Settings.
   const limit = settings.modelLimits[chatRequest.model];
   if (limit && limit > 0 && (await routeUsageLastMinute(env, chatRequest.model)) >= limit) {
-    ctx.waitUntil(record({ status: 429, outcome: 'governor', errorClass: 'rate_limit', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
+    ctx.waitUntil(
+      record({
+        status: 429,
+        outcome: 'governor',
+        errorClass: 'rate_limit',
+        latencyMs: Date.now() - startedAt,
+        ttftMs: 0,
+        generationMs: 0,
+      })
+    );
     throw new ProxyError(`Model limit reached for ${chatRequest.model} (${limit}/min)`, 429);
   }
 
@@ -748,8 +757,20 @@ async function handleChatCompletion(
   if (pressure && pressure.until > Date.now()) {
     const waitMs = pressure.until - Date.now();
     if (waitMs > queueDeadline - Date.now()) {
-      ctx.waitUntil(record({ status: 503, outcome: 'model_pressure', errorClass: 'upstream_5xx', latencyMs: Date.now() - startedAt, ttftMs: 0, generationMs: 0 }));
-      throw new ProxyError(`Model ${chatRequest.model} is under pressure, retry after ${Math.ceil(waitMs / 1000)}s`, 503);
+      ctx.waitUntil(
+        record({
+          status: 503,
+          outcome: 'model_pressure',
+          errorClass: 'upstream_5xx',
+          latencyMs: Date.now() - startedAt,
+          ttftMs: 0,
+          generationMs: 0,
+        })
+      );
+      throw new ProxyError(
+        `Model ${chatRequest.model} is under pressure, retry after ${Math.ceil(waitMs / 1000)}s`,
+        503
+      );
     }
     await sleep(waitMs);
   }
@@ -763,9 +784,7 @@ async function handleChatCompletion(
     return router.executeWithFallback(chatRequest, 'openai');
   };
 
-  const executeQueued = async (
-    onWait?: () => void
-  ): Promise<ProviderResponse> => {
+  const executeQueued = async (onWait?: () => void): Promise<ProviderResponse> => {
     const ticket = await joinQueue(env, identity.label, chatRequest.model);
     try {
       let upstreamRetries = 0;
@@ -814,10 +833,16 @@ async function handleChatCompletion(
     } catch (error) {
       // Unknown-model etc.: count it, then rethrow for the normal error mapping.
       const status = error instanceof ProxyError ? error.statusCode : 500;
-      ctx.waitUntil(record({
-        status, outcome: 'upstream_error', errorClass: errorClassForStatus(status),
-        latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
-      }));
+      ctx.waitUntil(
+        record({
+          status,
+          outcome: 'upstream_error',
+          errorClass: errorClassForStatus(status),
+          latencyMs: Date.now() - startedAt,
+          ttftMs: Date.now() - startedAt,
+          generationMs: 0,
+        })
+      );
       throw error;
     } finally {
       await leaveQueue(env, ticket);
@@ -827,7 +852,9 @@ async function handleChatCompletion(
   const rememberSticky = (response: ProviderResponse) => {
     if (response.keyUsed && env.ADMIN_KV) {
       ctx.waitUntil(
-        env.ADMIN_KV.put(`sticky:${stickyId}`, response.keyUsed, { expirationTtl: 3600 }).catch(() => undefined)
+        env.ADMIN_KV.put(`sticky:${stickyId}`, response.keyUsed, { expirationTtl: 3600 }).catch(
+          () => undefined
+        )
       );
     }
   };
@@ -836,18 +863,35 @@ async function handleChatCompletion(
     rememberSticky(response);
     void clearModelPressure(env, chatRequest.model);
     const latencyMs = Date.now() - startedAt;
-    const usage = (response.response as { usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } } | undefined)?.usage;
+    const usage = (
+      response.response as
+        | {
+            usage?: {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              completion_tokens_details?: { reasoning_tokens?: number };
+            };
+          }
+        | undefined
+    )?.usage;
     const choice = response.response?.choices?.[0];
-    ctx.waitUntil(record({
-      status: 200, outcome: 'success', errorClass: 'none',
-      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
-      latencyMs, ttftMs: latencyMs, generationMs: 0,
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
-      toolCalls: choice?.message?.tool_calls?.length ?? 0,
-      truncated: choice?.finish_reason === 'length' ? 1 : 0,
-    }));
+    ctx.waitUntil(
+      record({
+        status: 200,
+        outcome: 'success',
+        errorClass: 'none',
+        upstreamModel: response.upstreamModel ?? '',
+        upstreamKey: response.keyUsed ?? '',
+        latencyMs,
+        ttftMs: latencyMs,
+        generationMs: 0,
+        promptTokens: usage?.prompt_tokens ?? 0,
+        completionTokens: usage?.completion_tokens ?? 0,
+        reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+        toolCalls: choice?.message?.tool_calls?.length ?? 0,
+        truncated: choice?.finish_reason === 'length' ? 1 : 0,
+      })
+    );
   };
 
   const finishFailure = (response: ProviderResponse) => {
@@ -855,12 +899,18 @@ async function handleChatCompletion(
     if ([429, 503].includes(status) && !response.windowFull) {
       void noteModelPressure(env, chatRequest.model, status);
     }
-    ctx.waitUntil(record({
-      status, outcome: response.windowFull ? 'window_full' : 'upstream_error',
-      errorClass: errorClassForStatus(status),
-      upstreamModel: response.upstreamModel ?? '', upstreamKey: response.keyUsed ?? '',
-      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
-    }));
+    ctx.waitUntil(
+      record({
+        status,
+        outcome: response.windowFull ? 'window_full' : 'upstream_error',
+        errorClass: errorClassForStatus(status),
+        upstreamModel: response.upstreamModel ?? '',
+        upstreamKey: response.keyUsed ?? '',
+        latencyMs: Date.now() - startedAt,
+        ttftMs: Date.now() - startedAt,
+        generationMs: 0,
+      })
+    );
   };
 
   console.log(`[Worker] model=${chatRequest.model} stream=${chatRequest.stream || false}`);
@@ -873,35 +923,55 @@ async function handleChatCompletion(
     const readable = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (text: string) => {
-          try { controller.enqueue(encoder.encode(text)); } catch { /* client gone */ }
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            /* client gone */
+          }
         };
-        heartbeat = setInterval(() => send(': heartbeat\n\n'), Math.max(settings.heartbeatSec, 1) * 1000);
+        heartbeat = setInterval(
+          () => send(': heartbeat\n\n'),
+          Math.max(settings.heartbeatSec, 1) * 1000
+        );
         try {
           const response = await executeQueued();
           if (heartbeat) clearInterval(heartbeat);
           if (!response.success || !response.stream) {
             finishFailure(response);
             const status = response.statusCode || 500;
-            send(`data: ${JSON.stringify({ error: { message: response.error || 'All providers failed', type: 'proxy_error', code: status } })}\n\n`);
-            send(`data: ${JSON.stringify({ id: 'chatcmpl-error', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: chatRequest.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+            send(
+              `data: ${JSON.stringify({ error: { message: response.error || 'All providers failed', type: 'proxy_error', code: status } })}\n\n`
+            );
+            send(
+              `data: ${JSON.stringify({ id: 'chatcmpl-error', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: chatRequest.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`
+            );
             send('data: [DONE]\n\n');
             controller.close();
             return;
           }
           rememberSticky(response);
           void clearModelPressure(env, chatRequest.model);
-          const wrapped = wrapStreamForMetrics(response.stream, (stats, totalMs) => {
-            void record({
-              status: 200, outcome: 'success', errorClass: 'none',
-              upstreamModel: stats.upstreamModel || response.upstreamModel || '',
-              upstreamKey: response.keyUsed ?? '',
-              latencyMs: totalMs, ttftMs: stats.ttftMs || totalMs,
-              generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
-              promptTokens: stats.promptTokens, completionTokens: stats.completionTokens,
-              reasoningTokens: stats.reasoningTokens, toolCalls: stats.toolCalls,
-              truncated: stats.truncated,
-            });
-          }, startedAt);
+          const wrapped = wrapStreamForMetrics(
+            response.stream,
+            (stats, totalMs) => {
+              void record({
+                status: 200,
+                outcome: 'success',
+                errorClass: 'none',
+                upstreamModel: stats.upstreamModel || response.upstreamModel || '',
+                upstreamKey: response.keyUsed ?? '',
+                latencyMs: totalMs,
+                ttftMs: stats.ttftMs || totalMs,
+                generationMs: stats.ttftMs ? totalMs - stats.ttftMs : 0,
+                promptTokens: stats.promptTokens,
+                completionTokens: stats.completionTokens,
+                reasoningTokens: stats.reasoningTokens,
+                toolCalls: stats.toolCalls,
+                truncated: stats.truncated,
+              });
+            },
+            startedAt
+          );
           // Idle guard: cut streams that stall mid-generation.
           const reader = wrapped.getReader();
           const idleMs = Math.max(settings.streamIdleSec, 5) * 1000;
@@ -912,7 +982,9 @@ async function handleChatCompletion(
               new Promise<never>((_, reject) => {
                 timer = setTimeout(() => reject(new Error('stream idle timeout')), idleMs);
               }),
-            ]).finally(() => { if (timer) clearTimeout(timer); });
+            ]).finally(() => {
+              if (timer) clearTimeout(timer);
+            });
             if (chunk.done) break;
             controller.enqueue(chunk.value);
             if (Date.now() >= overallDeadline) {
@@ -924,10 +996,14 @@ async function handleChatCompletion(
         } catch (error) {
           if (heartbeat) clearInterval(heartbeat);
           try {
-            send(`data: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : 'Stream failed', type: 'proxy_error' } })}\n\n`);
+            send(
+              `data: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : 'Stream failed', type: 'proxy_error' } })}\n\n`
+            );
             send('data: [DONE]\n\n');
             controller.close();
-          } catch { /* already closed */ }
+          } catch {
+            /* already closed */
+          }
         }
       },
       cancel() {
@@ -952,7 +1028,12 @@ async function handleChatCompletion(
   if (response.stream) {
     // Non-streaming client but provider returned a stream (should not happen).
     return new Response(response.stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...CORS_HEADERS },
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        ...CORS_HEADERS,
+      },
     });
   }
   finishSuccess(response);
@@ -985,7 +1066,10 @@ async function rememberNoInjectModel(env: Env, model: string): Promise<void> {
   }
 }
 
-interface ModelPressure { until: number; level: number }
+interface ModelPressure {
+  until: number;
+  level: number;
+}
 
 async function loadModelPressure(env: Env, route: string): Promise<ModelPressure | null> {
   try {
@@ -1181,7 +1265,9 @@ async function handleAnthropicConversionPath(
 // Model catalog cache (single-flight, TTL from Settings)
 // =============================================================================
 
-let modelsFlight: Promise<Array<{ id: string; object: string; owned_by: string; permission: string[] }>> | null = null;
+let modelsFlight: Promise<
+  Array<{ id: string; object: string; owned_by: string; permission: string[] }>
+> | null = null;
 
 async function cachedModels(
   env: Env,
@@ -1192,7 +1278,10 @@ async function cachedModels(
     try {
       const raw = await env.ADMIN_KV.get('models_cache');
       if (raw) {
-        const cached = JSON.parse(raw) as { at: number; data: ReturnType<Router['getAvailableModels']> };
+        const cached = JSON.parse(raw) as {
+          at: number;
+          data: ReturnType<Router['getAvailableModels']>;
+        };
         if (Date.now() - cached.at < ttlMs) return cached.data;
       }
     } catch {
@@ -1291,9 +1380,17 @@ async function verifyAdminIdentity(request: Request, env: Env): Promise<AdminIde
     try {
       const raw = await env.ADMIN_KV.get(`session:${match[1]}`);
       if (raw) {
-        const session = JSON.parse(raw) as { name: string; sessionVersion: number; expires: number };
+        const session = JSON.parse(raw) as {
+          name: string;
+          sessionVersion: number;
+          expires: number;
+        };
         const user = settings.users.find((u) => u.name === session.name);
-        if (user && session.expires > Date.now() && session.sessionVersion === user.sessionVersion) {
+        if (
+          user &&
+          session.expires > Date.now() &&
+          session.sessionVersion === user.sessionVersion
+        ) {
           return { name: user.name, role: user.role };
         }
       }
@@ -1322,7 +1419,8 @@ async function handleLogin(request: Request, env: Env, path: string): Promise<Re
       JSON.stringify({ name: user.name, sessionVersion: user.sessionVersion, expires }),
       { expirationTtl: 7 * 86_400 }
     );
-    const proto = request.headers.get('X-Forwarded-Proto') ?? new URL(request.url).protocol.replace(':', '');
+    const proto =
+      request.headers.get('X-Forwarded-Proto') ?? new URL(request.url).protocol.replace(':', '');
     const secure = proto === 'https' ? '; Secure' : '';
     return new Response(JSON.stringify({ ok: true, user: { name: user.name, role: user.role } }), {
       headers: {
@@ -1336,7 +1434,11 @@ async function handleLogin(request: Request, env: Env, path: string): Promise<Re
     const cookie = request.headers.get('Cookie') ?? '';
     const match = /(?:^|;\s*)blg_session=([a-f0-9]+)/.exec(cookie);
     if (match) {
-      try { await env.ADMIN_KV?.delete(`session:${match[1]}`); } catch { /* best effort */ }
+      try {
+        await env.ADMIN_KV?.delete(`session:${match[1]}`);
+      } catch {
+        /* best effort */
+      }
     }
     return new Response(JSON.stringify({ ok: true }), {
       headers: {

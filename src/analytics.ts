@@ -331,7 +331,8 @@ export async function getAnalytics(env: Env, settings: Settings, params: URLSear
           const raw = await env.ADMIN_KV.get(key.name);
           if (!raw) continue;
           const parsed = JSON.parse(raw) as { until: number; level: number };
-          if (parsed.until > Date.now()) out.push({ route: key.name.slice('pressure:'.length), ...parsed });
+          if (parsed.until > Date.now())
+            out.push({ route: key.name.slice('pressure:'.length), ...parsed });
         }
         return out;
       } catch {

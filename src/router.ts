@@ -93,7 +93,10 @@ export class Router {
       );
 
       try {
-        const manager = new TokenManager(config, this.env, { ...this.runtime, route: request.model });
+        const manager = new TokenManager(config, this.env, {
+          ...this.runtime,
+          route: request.model,
+        });
         const response = await manager.executeWithRotation(request);
 
         response.upstreamModel = config.model;

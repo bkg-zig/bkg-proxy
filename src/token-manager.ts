@@ -73,7 +73,12 @@ export class TokenManager {
       if (settings) {
         const keyName = apiKeyPairs[i]?.name ?? '';
         const rpm = settings.keyRpm[keyName] ?? 40;
-        const granted = await tryAcquireKey(this.env, keyName, rpm, this.runtime?.route ?? this.config.model);
+        const granted = await tryAcquireKey(
+          this.env,
+          keyName,
+          rpm,
+          this.runtime?.route ?? this.config.model
+        );
         if (!granted) {
           continue;
         }

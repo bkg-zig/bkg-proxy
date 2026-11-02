@@ -20,7 +20,9 @@ export async function ensureSlots(env: Env): Promise<boolean> {
     await env.DB.prepare(
       'CREATE TABLE IF NOT EXISTS key_slots (ts INTEGER NOT NULL, key_name TEXT NOT NULL, route TEXT)'
     ).run();
-    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_slots_key_ts ON key_slots(key_name, ts)').run();
+    await env.DB.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_slots_key_ts ON key_slots(key_name, ts)'
+    ).run();
     await env.DB.prepare(
       'CREATE TABLE IF NOT EXISTS queue_tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, last_seen INTEGER NOT NULL, client TEXT, route TEXT)'
     ).run();
@@ -52,7 +54,9 @@ export async function tryAcquireKey(
       .run();
     const granted = (result.meta?.changes ?? 0) > 0;
     if (Math.random() < 0.02) {
-      await env.DB.prepare('DELETE FROM key_slots WHERE ts < ?').bind(now - WINDOW_MS).run();
+      await env.DB.prepare('DELETE FROM key_slots WHERE ts < ?')
+        .bind(now - WINDOW_MS)
+        .run();
     }
     return granted;
   } catch (error) {
@@ -109,7 +113,9 @@ export async function isQueueHead(env: Env, ticket: number): Promise<boolean> {
   if (!ticket || !env.DB) return true;
   try {
     const now = Date.now();
-    await env.DB.prepare('DELETE FROM queue_tickets WHERE last_seen < ?').bind(now - 15_000).run();
+    await env.DB.prepare('DELETE FROM queue_tickets WHERE last_seen < ?')
+      .bind(now - 15_000)
+      .run();
     const row = await env.DB.prepare('SELECT MIN(id) AS head FROM queue_tickets').first<{
       head: number | null;
     }>();
@@ -131,9 +137,7 @@ export async function leaveQueue(env: Env, ticket: number): Promise<void> {
 export async function queueLength(env: Env): Promise<number> {
   if (!(await ensureSlots(env)) || !env.DB) return 0;
   try {
-    const row = await env.DB.prepare(
-      'SELECT COUNT(*) AS c FROM queue_tickets WHERE last_seen >= ?'
-    )
+    const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM queue_tickets WHERE last_seen >= ?')
       .bind(Date.now() - 15_000)
       .first<{ c: number }>();
     return row?.c ?? 0;
