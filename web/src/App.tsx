@@ -38,6 +38,7 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [search, setSearch] = useState('');
   const [showLogin, setShowLogin] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState<boolean>(() => {
     try { return localStorage.getItem('blg_menu') !== 'closed'; } catch { return true; }
   });
@@ -187,60 +188,71 @@ export default function App() {
 
         <main>
           {!me && (
-            <section className="panel">
-              <h2>Anmeldung</h2>
-              <p className="muted">Die Anmeldung sitzt jetzt oben rechts in der Leiste. Dort auf Anmelden drücken, dann Token oder Passwort eingeben.</p>
-              <div className="row" style={{ marginTop: 12 }}>
+            <div className="rangebar">
+              <div className="rangebar-head">
+                <span>Noch nicht angemeldet. Die Anmeldung sitzt oben rechts in der Leiste.</span>
                 <button className="btn btn-primary" onClick={() => setShowLogin(true)}>Anmelden öffnen</button>
               </div>
               {status && <p className="status" role="status">{status}</p>}
-            </section>
+            </div>
           )}
 
-          <section className="panel" aria-label="Zeitraum">
-            <h2>Zeitraum für alle Auswertungen</h2>
-            <div className="row" role="group" aria-label="Zeitraum wählen">
-              {([['1h', '1 Stunde'], ['6h', '6 Stunden'], ['24h', '24 Stunden'], ['7d', '7 Tage'], ['30d', '30 Tage'], ['all', 'Gesamt']] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  className={`btn${range.preset === value ? ' active-range' : ''}`}
-                  onClick={() => setRange({ preset: value })}
-                >{label}</button>
-              ))}
-              <button
-                className="btn"
-                aria-pressed={paused}
-                onClick={() => {
-                  if (!paused && analytics) setRange({ from: analytics.range.from, to: Date.now() });
-                  setPaused(!paused);
-                  pausedRef.current = !paused;
-                }}
-              >{paused ? 'Weiter' : 'Pause'}</button>
-            </div>
-            <div className="row" style={{ marginTop: 10 }}>
-              <div><label>Von (eigen)</label><input type="datetime-local" value={fromInput} onChange={(e) => setFromInput(e.target.value)} /></div>
-              <div><label>Bis (eigen)</label><input type="datetime-local" value={toInput} onChange={(e) => setToInput(e.target.value)} /></div>
-              <div>
-                <button className="btn" onClick={() => {
-                  const f = fromInput ? new Date(fromInput).getTime() : 0;
-                  const t = toInput ? new Date(toInput).getTime() : Date.now();
-                  if (f && t > f) setRange({ from: f, to: t });
-                }}>Eigenen Zeitraum nutzen</button>
+          {['overview', 'models', 'clients', 'reliability', 'capacity'].includes(tab) && (
+            <div className="rangebar">
+              <div className="rangebar-head">
+                <span>
+                  <strong>Zeitraum:</strong>{' '}
+                  {analytics
+                    ? `${new Date(analytics.range.from).toLocaleDateString('de-DE')} bis ${new Date(analytics.range.to).toLocaleDateString('de-DE')}`
+                    : 'Standard'}
+                  {paused ? ' · pausiert' : ''}
+                </span>
+                <button className="btn" onClick={() => setRangeOpen(!rangeOpen)} aria-expanded={rangeOpen}>
+                  {rangeOpen ? 'Zeitraum einklappen' : 'Zeitraum ändern'}
+                </button>
               </div>
+              {rangeOpen && (
+                <div className="rangebar-body">
+                  <div className="row" role="group" aria-label="Zeitraum wählen">
+                    {([['1h', '1 Stunde'], ['6h', '6 Stunden'], ['24h', '24 Stunden'], ['7d', '7 Tage'], ['30d', '30 Tage'], ['all', 'Gesamt']] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        className={`btn${range.preset === value ? ' active-range' : ''}`}
+                        onClick={() => setRange({ preset: value })}
+                      >{label}</button>
+                    ))}
+                    <button
+                      className="btn"
+                      aria-pressed={paused}
+                      onClick={() => {
+                        if (!paused && analytics) setRange({ from: analytics.range.from, to: Date.now() });
+                        setPaused(!paused);
+                        pausedRef.current = !paused;
+                      }}
+                    >{paused ? 'Weiter' : 'Pause'}</button>
+                  </div>
+                  <div className="row" style={{ marginTop: 10 }}>
+                    <div><label>Von (eigen)</label><input type="datetime-local" value={fromInput} onChange={(e) => setFromInput(e.target.value)} /></div>
+                    <div><label>Bis (eigen)</label><input type="datetime-local" value={toInput} onChange={(e) => setToInput(e.target.value)} /></div>
+                    <div>
+                      <button className="btn" onClick={() => {
+                        const f = fromInput ? new Date(fromInput).getTime() : 0;
+                        const tt = toInput ? new Date(toInput).getTime() : Date.now();
+                        if (f && tt > f) setRange({ from: f, to: tt });
+                      }}>Eigenen Zeitraum nutzen</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="muted" style={{ marginTop: 8 }}>
-              {analytics
-                ? `Zeitraum: ${new Date(analytics.range.from).toLocaleString('de-DE')} bis ${new Date(analytics.range.to).toLocaleString('de-DE')}${paused ? ' · pausiert (Now-Werte laufen weiter)' : ' · erneuert sich alle 3 Sekunden'}`
-                : 'Standard: eingestellter Zeitraum (30 Tage), ab der ersten Messung.'}
-            </p>
-          </section>
+          )}
 
           {!analytics || !overview || !settings ? (
             <section className="panel">
               <p className="muted">Bitte zuerst anmelden. Danach laden alle Bereiche automatisch.</p>
             </section>
           ) : (
-            <section className="panel">
+            <div className="page">
               {tab === 'overview' && (
                 <>
                   <OverviewPage a={analytics} go={setTab} />
@@ -270,7 +282,7 @@ export default function App() {
               {tab === 'settings' && (
                 <SettingsPage settings={settings} overview={overview} analytics={analytics} reload={() => void loadAll()} />
               )}
-            </section>
+            </div>
           )}
         </main>
         {showLogin && (

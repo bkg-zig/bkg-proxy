@@ -50,6 +50,27 @@ export class CloudflareAIProvider extends BaseProvider {
       content = response.response;
     } else if (typeof response === 'string') {
       content = response;
+    } else if (Array.isArray(response.choices) && response.choices.length > 0) {
+      // OpenAI-shaped Workers AI models (gpt-oss, qwen3, nemotron, gemma-4)
+      const message = response.choices[0].message ?? {};
+      content = message.content ?? message.reasoning_content ?? '';
+      const toolCalls = message.tool_calls?.length
+        ? this.convertToolCalls(message.tool_calls)
+        : undefined;
+      const openAIResponse = createOpenAIResponse(
+        content,
+        this.model,
+        toolCalls ? 'tool_calls' : 'stop',
+        toolCalls,
+        response.usage
+          ? {
+              prompt_tokens: response.usage.prompt_tokens ?? 0,
+              completion_tokens: response.usage.completion_tokens ?? 0,
+              total_tokens: response.usage.total_tokens ?? 0,
+            }
+          : undefined
+      );
+      return { success: true, response: openAIResponse };
     }
 
     let toolCalls: ToolCall[] | undefined;

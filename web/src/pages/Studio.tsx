@@ -120,6 +120,8 @@ export function ChatPage() {
             <option value="auto">auto (bestes)</option><option value="fast">fast</option>
             <option value="chat">chat</option><option value="code">code</option>
             <option value="deep-think">deep-think</option><option value="vision">vision</option>
+            <option value="cf-free">cf-free (Cloudflare gratis)</option><option value="cf-fast">cf-fast (Cloudflare gratis)</option>
+            <option value="cf-code">cf-code (Cloudflare gratis)</option><option value="cf-reasoning">cf-reasoning (Cloudflare gratis)</option>
           </select></div>
         <div><label>Vorlese-Stimme</label>
           <select value={voice} onChange={(e) => setVoice(e.target.value)}>

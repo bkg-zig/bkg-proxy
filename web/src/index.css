@@ -125,3 +125,18 @@ audio{width:100%;margin-top:14px}
   .content{width:100%}
 }
 @media (prefers-reduced-motion: reduce){.sidebar{transition:none}}
+
+/* Schlanke Zeitraum-Leiste, nur noch bei den Statistiken */
+.rangebar{background:var(--surface-0);border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin-bottom:18px}
+.rangebar-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.rangebar-body{border-top:1px solid var(--border);margin-top:11px;padding-top:12px}
+.page{display:block}
+
+/* Aufgeraeumteres Gesamtbild */
+main{padding-top:26px}
+.panel{border-radius:14px}
+.card{border-radius:12px;background:linear-gradient(180deg, var(--surface-1), var(--surface-0))}
+.hero{border-radius:16px;padding:34px}
+.cyber-table th{background:transparent;border-bottom:1px solid var(--border-strong)}
+input,textarea,select{border-radius:9px}
+.btn{border-radius:9px}
