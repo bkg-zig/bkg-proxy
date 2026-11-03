@@ -61,6 +61,12 @@ interface ClientIdentity {
   kind: string;
 }
 import { createAudioStream, getVoices, DEFAULT_VOICE } from './tts/tts';
+import {
+  MAGPIE_MODEL_ID,
+  listGermanMagpieVoices,
+  localeFromMagpieVoice,
+  synthesizeMagpie,
+} from './magpie';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -122,7 +128,8 @@ export default {
         path.startsWith('/anthropic') ||
         path === '/health' ||
         path === '/tts' ||
-        path === '/voices';
+        path === '/voices' ||
+        path.startsWith('/voices/');
       if (
         request.method === 'GET' &&
         (path === '/dashboard' ||
@@ -167,7 +174,16 @@ export default {
           path === '/anthropic/models' ||
           path === '/anthropic/v1/models')
       ) {
-        return json({ object: 'list', data: await cachedModels(env, settings) });
+        const models = await cachedModels(env, settings);
+        // Magpie TTS is not listed by the NVIDIA chat API, so expose it here
+        // as a normal model entry (speech only, via /v1/audio/speech).
+        const data = models.some((m) => m.id === MAGPIE_MODEL_ID)
+          ? models
+          : [
+              ...models,
+              { id: MAGPIE_MODEL_ID, object: 'model', owned_by: 'nvidia', permission: [] },
+            ];
+        return json({ object: 'list', data });
       }
 
       // Image generation — POST only
@@ -178,6 +194,45 @@ export default {
       // Speech (Microsoft Edge TTS) — OpenAI-style and upstream-style
       if (request.method === 'POST' && (path === '/v1/audio/speech' || path === '/tts')) {
         return await handleSpeech(request, env, identity, agent, settings, ctx);
+      }
+      // German voices only: Edge (de-*) plus NVIDIA Magpie (de-DE).
+      if (
+        request.method === 'GET' &&
+        (path === '/v1/audio/voices/de' || path === '/v1/voices/de' || path === '/voices/de')
+      ) {
+        try {
+          const edge = (await getVoices())
+            .filter((v) => v.Locale.toLowerCase().startsWith('de-'))
+            .map((v) => ({
+              ShortName: v.ShortName,
+              Locale: v.Locale,
+              Gender: v.Gender,
+              FriendlyName: v.FriendlyName,
+              source: 'microsoft-edge',
+            }));
+          let magpie: Array<Record<string, string>> = [];
+          let magpieNote =
+            'Magpie-Synthese: POST /v1/audio/speech mit engine "magpie" und einer Stimme von hier, oder model "nvidia/magpie-tts-multilingual".';
+          try {
+            magpie = (await listGermanMagpieVoices(env)).map((v) => ({
+              ShortName: v.name,
+              Locale: v.locale,
+              Gender: '',
+              FriendlyName: `NVIDIA Magpie ${v.speaker} (${v.locale})`,
+              source: 'nvidia-magpie',
+            }));
+          } catch (error) {
+            console.error('[Magpie] voice list failed:', error);
+            magpieNote = 'Magpie-Stimmenliste gerade nicht erreichbar.';
+          }
+          return json({
+            voices: [...edge, ...magpie],
+            magpie: { model: MAGPIE_MODEL_ID, note: magpieNote },
+          });
+        } catch (error) {
+          console.error('[TTS] voice list failed:', error);
+          throw new ProxyError('Failed to fetch voices', 502);
+        }
       }
       if (
         request.method === 'GET' &&
@@ -727,6 +782,8 @@ async function handleSpeech(
     text?: string;
     voice?: string;
     engine?: string;
+    model?: string;
+    language?: string;
   };
   const text = (body.input ?? body.text ?? '').trim();
   if (!text) {
@@ -736,6 +793,65 @@ async function handleSpeech(
     throw new ProxyError('Invalid request: text too long (max 2000)', 400);
   }
   const voice = body.voice?.trim() || DEFAULT_VOICE;
+  const wantsMagpie =
+    body.engine === 'magpie' ||
+    body.engine === 'nvidia' ||
+    (body.model ?? '').toLowerCase().includes('magpie') ||
+    voice.startsWith('Magpie-');
+  if (wantsMagpie) {
+    const namedVoice = voice.startsWith('Magpie-') ? voice : null;
+    const language =
+      body.language?.trim() ||
+      (namedVoice ? localeFromMagpieVoice(namedVoice) : null) ||
+      'de-DE';
+    try {
+      const result = await synthesizeMagpie(env, text, language, namedVoice);
+      ctx.waitUntil(
+        recordMetric(
+          env,
+          {
+            ts: startedAt,
+            route: 'tts-magpie',
+            upstreamModel: MAGPIE_MODEL_ID,
+            client: identity.label,
+            agent,
+            upstreamKey: '',
+            status: 200,
+            outcome: 'success',
+            errorClass: 'none',
+            latencyMs: Date.now() - startedAt,
+            ttftMs: Date.now() - startedAt,
+            generationMs: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            reasoningTokens: 0,
+            toolCalls: 0,
+            truncated: 0,
+            stream: 0,
+            temperature: null,
+            topP: null,
+            maxTokens: null,
+            messages: 1,
+            capacityTotal: totalCapacity(settings),
+          },
+          settings.retentionDays
+        )
+      );
+      return new Response(result.audio, {
+        headers: {
+          'Content-Type': 'audio/wav',
+          'X-BKG-Voice': result.usedVoice,
+          ...CORS_HEADERS,
+        },
+      });
+    } catch (error) {
+      console.error('[Magpie] synthesis failed:', error);
+      throw new ProxyError(
+        `Magpie TTS failed: ${error instanceof Error ? error.message : 'unknown'}`,
+        502
+      );
+    }
+  }
   if (body.engine === 'melotts') {
     if (!env.AI) throw new ProxyError('Cloudflare AI binding not available', 500);
     const result = (await env.AI.run('@cf/myshell-ai/melotts', {

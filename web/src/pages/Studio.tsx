@@ -208,10 +208,24 @@ export function ImagesPage() {
   );
 }
 
+const MAGPIE_DE_VOICES = [
+  'Magpie-Multilingual.DE-DE.Mia',
+  'Magpie-Multilingual.DE-DE.Pascal',
+  'Magpie-Multilingual.DE-DE.Diego',
+  'Magpie-Multilingual.DE-DE.Jason',
+  'Magpie-Multilingual.DE-DE.Ray',
+  'Magpie-Multilingual.DE-DE.Leo',
+  'Magpie-Multilingual.DE-DE.Sofia',
+  'Magpie-Multilingual.DE-DE.Isabela',
+  'Magpie-Multilingual.DE-DE.Aria',
+  'Magpie-Multilingual.DE-DE.Louise',
+];
+
 export function SpeechPage() {
   const [text, setText] = useState('Hallo! Dein Proxy kann jetzt auch sprechen.');
   const [engine, setEngine] = useState('edge');
   const [voice, setVoice] = useState('de-DE-KatjaNeural');
+  const [magpieVoice, setMagpieVoice] = useState(MAGPIE_DE_VOICES[0]);
   const [voices, setVoices] = useState<Array<{ ShortName: string; Locale: string; Gender: string }>>([]);
   const [status, setStatus] = useState('');
   const [audio, setAudio] = useState('');
@@ -222,7 +236,7 @@ export function SpeechPage() {
     if (!clientToken()) { setStatus('Bitte oben deinen API-Key eintragen.'); return; }
     setStatus('Stimme wird erstellt...');
     try {
-      const res = await clientFetch('/v1/audio/speech', { method: 'POST', body: JSON.stringify({ input: text.trim(), voice, engine }) });
+      const res = await clientFetch('/v1/audio/speech', { method: 'POST', body: JSON.stringify({ input: text.trim(), voice: engine === 'magpie' ? magpieVoice : voice, engine }) });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
         throw new Error(d.error?.message ?? `Fehler ${res.status}`);
@@ -265,8 +279,20 @@ export function SpeechPage() {
       <label>Stimmen-Maschine</label>
       <select value={engine} onChange={(e) => setEngine(e.target.value)}>
         <option value="edge">Microsoft Edge (322 Stimmen)</option>
+        <option value="magpie">NVIDIA Magpie (Deutsch, Modell nvidia/magpie-tts-multilingual)</option>
         <option value="melotts">MeloTTS (Cloudflare gratis)</option>
       </select>
+      {engine === 'magpie' && (
+        <>
+          <label>Magpie-Stimme (Deutsch)</label>
+          <select value={magpieVoice} onChange={(e) => setMagpieVoice(e.target.value)}>
+            {MAGPIE_DE_VOICES.map((v) => (
+              <option key={v} value={v}>{v.replace('Magpie-Multilingual.DE-DE.', 'Deutsch: ')}</option>
+            ))}
+          </select>
+          <p className="muted">Zehn deutsche NVIDIA-Stimmen. Ohne Namenswahl spricht die eingebaute deutsche Standardstimme des Modells.</p>
+        </>
+      )}
       <label>Stimme (nur Edge)</label>
       <select value={voice} onChange={(e) => setVoice(e.target.value)}>
         <optgroup label="Deutsche Stimmen">
