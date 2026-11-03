@@ -13,8 +13,7 @@ import { Env } from './types';
 
 export const MAGPIE_MODEL_ID = 'nvidia/magpie-tts-multilingual';
 
-const NVCF_BASE =
-  'https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com';
+const NVCF_BASE = 'https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com';
 
 function magpieBase(env: Env): string {
   const override = env.MAGPIE_BASE_URL;

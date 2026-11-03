@@ -801,9 +801,7 @@ async function handleSpeech(
   if (wantsMagpie) {
     const namedVoice = voice.startsWith('Magpie-') ? voice : null;
     const language =
-      body.language?.trim() ||
-      (namedVoice ? localeFromMagpieVoice(namedVoice) : null) ||
-      'de-DE';
+      body.language?.trim() || (namedVoice ? localeFromMagpieVoice(namedVoice) : null) || 'de-DE';
     try {
       const result = await synthesizeMagpie(env, text, language, namedVoice);
       ctx.waitUntil(
