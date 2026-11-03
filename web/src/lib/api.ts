@@ -24,6 +24,7 @@ export interface SettingsData {
   modelsTtlMin: number;
   maxInflight: number;
   strictPassthrough: boolean;
+  autoDiscover?: boolean;
   keyOwners: Record<string, string>;
 }
 

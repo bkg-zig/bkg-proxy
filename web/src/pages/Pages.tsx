@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AnalyticsData, OverviewData, fmt, ms, pct } from '../lib/api';
+import { useEffect, useState } from 'react';
+import { AnalyticsData, OverviewData, SettingsData, adminApi, fmt, ms, pct } from '../lib/api';
 import { LineChart, Meter, Ring, SortableTable, seriesBy } from '../components/charts';
 
 type A = AnalyticsData;
@@ -125,7 +125,82 @@ export function ModelsPage({ a, overview, reload }: { a: A; overview: OverviewDa
           </tbody>
         </table>
       ) : <p className="muted">Zwei Modelle mit Daten nötig.</p>}
+      <DiscoveryCard />
       <ModelAdmin overview={overview} reload={reload} />
+    </>
+  );
+}
+
+function DiscoveryCard() {
+  const [state, setState] = useState<{ summary: string; lastRun: number; counts: { works: number; fails: number; unchecked: number }; models: Array<{ id: string; source: string; status: string; error?: string }> } | null>(null);
+  const [status, setStatus] = useState('');
+  const [enabled, setEnabled] = useState(true);
+  const load = async () => {
+    setState(await adminApi('/admin/api/discovery'));
+    const s = await adminApi<SettingsData>('/admin/api/settings');
+    setEnabled(s.autoDiscover !== false);
+  };
+  useEffect(() => { void load().catch(() => undefined); }, []);
+  return (
+    <>
+      <h2>Automatische Modell-Entdeckung</h2>
+      <p className="muted">Der Proxy holt jeden Tag die Modell-Listen von NVIDIA und Cloudflare, testet jedes neue Modell mit einer Mini-Anfrage und nimmt nur auf, was wirklich antwortet. Kaputte Modelle bleiben draußen. Gelöschte entdeckte Modelle kommen nicht wieder.</p>
+      {state ? (
+        <>
+          <div className="cards">
+            <div className="card"><p className="lbl">Funktionieren</p><p className="big">{state.counts.works}</p></div>
+            <div className="card"><p className="lbl">Gehen nicht</p><p className="big">{state.counts.fails}</p></div>
+            <div className="card"><p className="lbl">Warten noch auf Test</p><p className="big">{state.counts.unchecked}</p></div>
+            <div className="card"><p className="lbl">Zuletzt gelaufen</p><p className="big" style={{ fontSize: 17 }}>{state.lastRun ? new Date(state.lastRun).toLocaleString('de-DE') : 'noch nie'}</p><p className="muted">{state.summary}</p></div>
+          </div>
+          <label>Automatische Entdeckung an oder aus</label>
+          <select value={String(enabled)} onChange={(e) => {
+            const value = e.target.value === 'true';
+            setEnabled(value);
+            void (async () => {
+              try {
+                const s = await adminApi<SettingsData>('/admin/api/settings');
+                await adminApi('/admin/api/settings', { method: 'PUT', body: JSON.stringify({ ...s, autoDiscover: value }) });
+                setStatus(value ? 'Entdeckung ist an.' : 'Entdeckung ist aus. Schon aufgenommene Modelle bleiben.');
+              } catch (err) { setStatus(`Fehler: ${err instanceof Error ? err.message : 'unbekannt'}`); }
+            })();
+          }}>
+            <option value="true">An: neue gute Modelle kommen von selbst dazu</option>
+            <option value="false">Aus: nur die festen Modelle aus der Liste</option>
+          </select>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button className="btn btn-primary" onClick={() => {
+              void (async () => {
+                setStatus('Teste gerade die nächsten Modelle, das dauert einen Moment...');
+                try {
+                  const d = await adminApi<{ summary: string }>('/admin/api/discovery/run', { method: 'POST' });
+                  setStatus(`Fertig: ${d.summary}`);
+                  await load();
+                } catch (err) { setStatus(`Fehler: ${err instanceof Error ? err.message : 'unbekannt'}`); }
+              })();
+            }}>Jetzt neue Modelle entdecken</button>
+          </div>
+          <p className="status" role="status">{status}</p>
+          {state.models.length > 0 && (
+            <table className="cyber-table">
+              <thead><tr><th>Modell</th><th>Herkunft</th><th>Stand</th></tr></thead>
+              <tbody>
+                {state.models.map((m) => (
+                  <tr key={m.id}>
+                    <td>{m.id}</td>
+                    <td>{m.source === 'nvidia' ? 'NVIDIA' : 'Cloudflare'}</td>
+                    <td>{m.status === 'works'
+                      ? <span className="badge badge-green">geht</span>
+                      : m.status === 'fails'
+                        ? <span className="badge badge-red">geht nicht{m.error ? `: ${m.error}` : ''}</span>
+                        : <span className="badge badge-amber">wartet</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      ) : <p className="muted">Lade Entdeckungs-Stand...</p>}
     </>
   );
 }

@@ -148,6 +148,7 @@ export interface Settings {
   modelsTtlMin: number;
   maxInflight: number;
   strictPassthrough: boolean;
+  autoDiscover: boolean;
   keyOwners: Record<string, string>;
 }
 
@@ -178,6 +179,7 @@ export function defaultSettings(): Settings {
     modelsTtlMin: 10,
     maxInflight: 0,
     strictPassthrough: false,
+    autoDiscover: true,
     keyOwners: {},
   };
 }

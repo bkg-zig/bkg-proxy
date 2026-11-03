@@ -53,3 +53,7 @@ head_sampling_rate = 1
 # - every key name referenced by `apiKeys` in routes.json
 #   (GOOGLE_KEY_1, NVIDIA_KEY_1, OPENROUTER_KEY_1, ANTHROPIC_KEY_1, ...)
 # ====================================================================================
+
+# Automatische Modell-Entdeckung: einmal am Tag neue Modelle pruefen
+[triggers]
+crons = ["17 5 * * *"]

@@ -42,6 +42,12 @@ import {
 } from './metrics';
 import { getAnalytics } from './analytics';
 import { addDocument, listDocuments, deleteDocument, queryRag, embedTexts } from './rag';
+import { runDiscovery, loadDiscoveryState, mergeDiscoveredRoutes, addToBlocklist, clearBlocklist } from './discovery';
+
+async function effectiveRoutes(env: Env, settings: Settings) {
+  const routes = await loadEffectiveRoutes(env, settings);
+  return mergeDiscoveredRoutes(env, settings, routes);
+}
 import { slotCounts, joinQueue, queueHeartbeat, isQueueHead, leaveQueue } from './limiter';
 
 interface ClientIdentity {
@@ -167,7 +173,10 @@ export default {
       if (request.method === 'POST' && (path === '/v1/audio/speech' || path === '/tts')) {
         return await handleSpeech(request, env, identity, agent, settings, ctx);
       }
-      if (request.method === 'GET' && (path === '/v1/audio/voices' || path === '/voices')) {
+      if (
+        request.method === 'GET' &&
+        (path === '/v1/audio/voices' || path === '/v1/voices' || path === '/voices')
+      ) {
         try {
           const voices = await getVoices();
           return json({
@@ -282,6 +291,13 @@ export default {
       return new Response(errorResponse.body, { status: errorResponse.status, headers });
     }
   },
+
+  // Daily automatic model discovery (Cron Trigger in wrangler.toml)
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const settings = await loadSettings(env);
+    if (settings.autoDiscover === false) return;
+    ctx.waitUntil(runDiscovery(env, 30));
+  },
 };
 
 // =============================================================================
@@ -304,7 +320,7 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
   }
 
   if (request.method === 'GET' && path === '/admin/api/overview') {
-    const routes = await loadEffectiveRoutes(env);
+    const routes = await effectiveRoutes(env, await loadSettings(env));
     const clientKeys = (await listClientKeys(env))
       .filter((k) => admin.role !== 'user' || (k.owner ?? 'Master') === admin.name)
       .map(({ id, name, prefix, createdAt, owner }) => ({
@@ -389,10 +405,14 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
     const name = decodeURIComponent(path.slice('/admin/api/models/'.length));
     const routes: RouteConfig = await loadEffectiveRoutes(env);
     if (!routes[name]) {
-      throw new ProxyError(`Model not found: ${name}`, 404);
+      // Auto-discovered model: hide it via the blocklist so it stays gone.
+      await addToBlocklist(env, name);
+      await invalidateModelsCache(env);
+      return json({ ok: true, name, discovered: true });
     }
     delete routes[name];
     await saveRoutes(env, routes);
+    await addToBlocklist(env, name);
     await invalidateModelsCache(env);
     await invalidateModelsCache(env);
     return json({ ok: true, name, routes });
@@ -400,6 +420,7 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
 
   if (request.method === 'POST' && path === '/admin/api/routes/reset') {
     await resetRoutes(env);
+    await clearBlocklist(env);
     await invalidateModelsCache(env);
     return json({ ok: true, routes: await loadEffectiveRoutes(env) });
   }
@@ -435,6 +456,27 @@ async function handleAdmin(request: Request, env: Env, path: string): Promise<Re
       throw new ProxyError('Key not found', 404);
     }
     return json({ ok: true, id });
+  }
+
+  if (request.method === 'GET' && path === '/admin/api/discovery') {
+    const state = await loadDiscoveryState(env);
+    const models = Object.values(state.models).sort((a, b) => a.id.localeCompare(b.id));
+    return json({
+      lastRun: state.lastRun,
+      summary: state.lastSummary,
+      counts: {
+        works: models.filter((m) => m.status === 'works').length,
+        fails: models.filter((m) => m.status === 'fails').length,
+        unchecked: models.filter((m) => m.status === 'unchecked').length,
+      },
+      models,
+    });
+  }
+
+  if (request.method === 'POST' && path === '/admin/api/discovery/run') {
+    const state = await runDiscovery(env, 24);
+    await invalidateModelsCache(env);
+    return json({ ok: true, summary: state.lastSummary, lastRun: state.lastRun });
   }
 
   if (request.method === 'GET' && path === '/admin/api/analytics') {
@@ -932,7 +974,7 @@ async function handleChatCompletion(
   }
 
   const attempt = async (): Promise<ProviderResponse> => {
-    const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+    const router = new Router(env, await effectiveRoutes(env, settings), {
       settings,
       keyUsage: await slotCounts(env),
       stickyKey,
@@ -1289,7 +1331,7 @@ async function handleAnthropicChat(
   void agent;
   void ctx;
 
-  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+  const router = new Router(env, await effectiveRoutes(env, settings), {
     settings,
     keyUsage: await keyUsageLastMinute(env),
   });
@@ -1449,7 +1491,7 @@ async function cachedModels(
   }
   if (!modelsFlight) {
     modelsFlight = (async () => {
-      const router = new Router(env, await loadEffectiveRoutes(env, settings));
+      const router = new Router(env, await effectiveRoutes(env, settings));
       const data = router.getAvailableModels();
       if (ttlMs > 0 && env.ADMIN_KV) {
         try {
@@ -1483,7 +1525,7 @@ async function handleRagQuery(request: Request, env: Env, settings: Settings): P
   const context = hits.length
     ? hits.map((h, i) => `[${i + 1}] (${h.title}) ${h.text}`).join('\n\n')
     : '';
-  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+  const router = new Router(env, await effectiveRoutes(env, settings), {
     settings,
     keyUsage: await slotCounts(env),
   });
