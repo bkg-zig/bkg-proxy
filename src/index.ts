@@ -42,7 +42,13 @@ import {
 } from './metrics';
 import { getAnalytics } from './analytics';
 import { addDocument, listDocuments, deleteDocument, queryRag, embedTexts } from './rag';
-import { runDiscovery, loadDiscoveryState, mergeDiscoveredRoutes, addToBlocklist, clearBlocklist } from './discovery';
+import {
+  runDiscovery,
+  loadDiscoveryState,
+  mergeDiscoveredRoutes,
+  addToBlocklist,
+  clearBlocklist,
+} from './discovery';
 
 async function effectiveRoutes(env: Env, settings: Settings) {
   const routes = await loadEffectiveRoutes(env, settings);

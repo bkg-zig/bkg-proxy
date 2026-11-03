@@ -203,7 +203,9 @@ export async function runDiscovery(env: Env, batchSize = 20): Promise<DiscoveryS
       const model = queue.shift();
       if (!model) return;
       const result =
-        model.source === 'nvidia' ? await probeNvidia(env, model.id) : await probeCloudflare(env, model.id);
+        model.source === 'nvidia'
+          ? await probeNvidia(env, model.id)
+          : await probeCloudflare(env, model.id);
       model.status = result.ok ? 'works' : 'fails';
       model.checkedAt = Date.now();
       model.error = result.ok ? undefined : result.error;
