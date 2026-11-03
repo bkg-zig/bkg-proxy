@@ -190,6 +190,8 @@ export function ImagesPage() {
         <option value="sdxl-lightning">Schnell (SDXL Lightning)</option>
         <option value="sdxl">Beste Qualität (SDXL)</option>
         <option value="dreamshaper">DreamShaper</option>
+        <option value="flux-schnell">Flux Schnell (Cloudflare gratis)</option>
+        <option value="lucid-origin">Lucid Origin (Cloudflare gratis)</option>
         <option value="pollinations-flux">Pollinations Flux (kostenlos, extern)</option>
       </select>
       <div className="row" style={{ marginTop: 12 }}>
@@ -208,6 +210,7 @@ export function ImagesPage() {
 
 export function SpeechPage() {
   const [text, setText] = useState('Hallo! Dein Proxy kann jetzt auch sprechen.');
+  const [engine, setEngine] = useState('edge');
   const [voice, setVoice] = useState('de-DE-KatjaNeural');
   const [voices, setVoices] = useState<Array<{ ShortName: string; Locale: string; Gender: string }>>([]);
   const [status, setStatus] = useState('');
@@ -219,7 +222,7 @@ export function SpeechPage() {
     if (!clientToken()) { setStatus('Bitte oben deinen API-Key eintragen.'); return; }
     setStatus('Stimme wird erstellt...');
     try {
-      const res = await clientFetch('/v1/audio/speech', { method: 'POST', body: JSON.stringify({ input: text.trim(), voice }) });
+      const res = await clientFetch('/v1/audio/speech', { method: 'POST', body: JSON.stringify({ input: text.trim(), voice, engine }) });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
         throw new Error(d.error?.message ?? `Fehler ${res.status}`);
@@ -259,7 +262,12 @@ export function SpeechPage() {
       <h2>Text vorlesen (Microsoft Edge Stimmen)</h2>
       <label>Text zum Vorlesen</label>
       <textarea value={text} onChange={(e) => setText(e.target.value)} />
-      <label>Stimme</label>
+      <label>Stimmen-Maschine</label>
+      <select value={engine} onChange={(e) => setEngine(e.target.value)}>
+        <option value="edge">Microsoft Edge (322 Stimmen)</option>
+        <option value="melotts">MeloTTS (Cloudflare gratis)</option>
+      </select>
+      <label>Stimme (nur Edge)</label>
       <select value={voice} onChange={(e) => setVoice(e.target.value)}>
         <optgroup label="Deutsche Stimmen">
           {(germanLoaded.length ? germanLoaded.map((v) => ({ value: v.ShortName, label: `${v.Locale} – ${v.ShortName} (${v.Gender})` })) : GERMAN_VOICES).map((o) => (
@@ -287,6 +295,221 @@ export function SpeechPage() {
           <a className="btn" href={audio} download="sprache.mp3">MP3 herunterladen</a>
         </div>
       )}
+      <TranscribeCard />
     </>
+  );
+}
+
+function TranscribeCard() {
+  const [status, setStatus] = useState('');
+  const [text, setText] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const transcribe = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file) { setStatus('Bitte zuerst eine Ton-Datei wählen.'); return; }
+    if (!clientToken()) { setStatus('Bitte oben deinen API-Key eintragen.'); return; }
+    setStatus('Wird in Text verwandelt...');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${clientToken()}` },
+        body: form,
+      });
+      const d = (await res.json().catch(() => ({}))) as { text?: string; error?: { message?: string } };
+      if (!res.ok) throw new Error(d.error?.message ?? `Fehler ${res.status}`);
+      setText(d.text ?? '');
+      setStatus('Fertig.');
+    } catch (e) {
+      setStatus(`Fehler: ${e instanceof Error ? e.message : 'unbekannt'}`);
+    }
+  };
+  return (
+    <>
+      <h2 style={{ marginTop: 30 }}>Ton in Text (Whisper, gratis)</h2>
+      <p className="muted">Sprachnachricht oder Aufnahme hochladen, BKG schreibt sie als Text.</p>
+      <label>Ton-Datei</label>
+      <input ref={fileRef} type="file" accept="audio/*" />
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={() => void transcribe()}>In Text verwandeln</button>
+      </div>
+      <p className="status" role="status">{status}</p>
+      {text && (
+        <>
+          <label>Erkannter Text</label>
+          <textarea readOnly value={text} />
+        </>
+      )}
+    </>
+  );
+}
+
+const HELP_TEXT = `BKG Proxy Hilfe. Die API liegt unter api.eysho.info, das Studio unter studio.eysho.info. Modelle: auto ist das beste NVIDIA-Modell, fast ist schnell, code ist für Programmieren, vision versteht Bilder. cf-free, cf-fast, cf-code und cf-reasoning sind gratis Cloudflare-Modelle. Jeder NVIDIA-Key darf 40 Anfragen in 60 Sekunden. Wenn alle Keys voll sind, wartet die Anfrage in einer fairen Schlange, statt zu scheitern. Streams senden Herzschlag-Zeilen, damit die Verbindung nicht abreißt. Im Dashboard können Admins Modelle und Keys verwalten, Nutzer sehen nur ihre eigenen Keys. Bilder gehen mit SDXL, Flux und Lucid. Sprache vorlesen geht mit Edge-Stimmen und Melo. Ton in Text geht mit Whisper. Wissen: Eigene Texte können als Dokumente gespeichert und dann vom Assistenten durchsucht werden.`;
+
+interface RagDoc { id: string; title: string; chunks: number; created_at: number }
+interface RagSource { title: string; score: number }
+
+export function KnowledgePage() {
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [docs, setDocs] = useState<RagDoc[]>([]);
+  const [status, setStatus] = useState('');
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [sources, setSources] = useState<RagSource[]>([]);
+
+  const load = async () => {
+    const d = await (await clientFetch('/v1/rag/documents')).json() as { documents: RagDoc[] };
+    setDocs(d.documents ?? []);
+  };
+  useEffect(() => { if (clientToken()) void load().catch(() => undefined); }, []);
+
+  const add = async (docTitle: string, docText: string) => {
+    const res = await clientFetch('/v1/rag/documents', {
+      method: 'POST',
+      body: JSON.stringify({ title: docTitle, text: docText }),
+    });
+    const d = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    if (!res.ok) throw new Error(d.error?.message ?? `Fehler ${res.status}`);
+  };
+
+  return (
+    <>
+      <h2>Wissen (wie DevAssist und Tocyn)</h2>
+      <p className="muted">Speichere eigene Texte. Der Assistent durchsucht sie und antwortet daraus, mit Quellen. Alles gratis auf Cloudflare: BGE-Einbettungen, Vectorize-Suche, D1 für die Texte.</p>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="btn" onClick={() => {
+          void (async () => {
+            try { await add('BKG Proxy Hilfe', HELP_TEXT); setStatus('Hilfe gespeichert. Der Assistent kennt jetzt den Proxy.'); await load(); }
+            catch (e) { setStatus(`Fehler: ${e instanceof Error ? e.message : 'unbekannt'}`); }
+          })();
+        }}>BKG Hilfe als erstes Wissen speichern</button>
+      </div>
+      <label>Titel</label>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Zum Beispiel: Meine Notizen" />
+      <label>Text</label>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Hier deinen Text einfügen" style={{ minHeight: 130 }} />
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={() => {
+          void (async () => {
+            try { await add(title.trim() || 'Ohne Titel', text); setStatus('Gespeichert und durchsuchbar.'); setText(''); await load(); }
+            catch (e) { setStatus(`Fehler: ${e instanceof Error ? e.message : 'unbekannt'}`); }
+          })();
+        }}>Wissen speichern</button>
+      </div>
+      <p className="status" role="status">{status}</p>
+      <h2>Gespeicherte Dokumente</h2>
+      {docs.length ? (
+        <table className="cyber-table">
+          <thead><tr><th>Titel</th><th>Stücke</th><th>Gespeichert</th><th>Aktion</th></tr></thead>
+          <tbody>
+            {docs.map((d) => (
+              <tr key={d.id}>
+                <td>{d.title}</td><td>{d.chunks}</td><td>{new Date(d.created_at).toLocaleString('de-DE')}</td>
+                <td><button className="btn btn-danger" onClick={() => {
+                  if (!confirm('Dokument wirklich löschen?')) return;
+                  void clientFetch(`/v1/rag/documents/${encodeURIComponent(d.id)}`, { method: 'DELETE' }).then(() => load());
+                }}>Löschen</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : <p className="muted">Noch kein Wissen gespeichert.</p>}
+      <AskAssistant question={question} setQuestion={setQuestion} answer={answer} setAnswer={setAnswer} sources={sources} setSources={setSources} />
+    </>
+  );
+}
+
+function AskAssistant({ question, setQuestion, answer, setAnswer, sources, setSources }: {
+  question: string; setQuestion: (v: string) => void;
+  answer: string; setAnswer: (v: string) => void;
+  sources: RagSource[]; setSources: (v: RagSource[]) => void;
+}) {
+  const [status, setStatus] = useState('');
+  const ask = async () => {
+    if (!question.trim()) { setStatus('Bitte zuerst eine Frage schreiben.'); return; }
+    if (!clientToken()) { setStatus('Bitte oben deinen API-Key eintragen.'); return; }
+    setStatus('Assistent sucht im Wissen...');
+    try {
+      const res = await clientFetch('/v1/rag/query', { method: 'POST', body: JSON.stringify({ question: question.trim() }) });
+      const d = (await res.json().catch(() => ({}))) as { answer?: string; sources?: RagSource[]; error?: { message?: string } };
+      if (!res.ok) throw new Error(d.error?.message ?? `Fehler ${res.status}`);
+      setAnswer(d.answer ?? '');
+      setSources(d.sources ?? []);
+      setStatus('Antwort da.');
+    } catch (e) {
+      setStatus(`Fehler: ${e instanceof Error ? e.message : 'unbekannt'}`);
+    }
+  };
+  return (
+    <>
+      <h2>Assistenten fragen</h2>
+      <label>Deine Frage ans Wissen</label>
+      <textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Zum Beispiel: Wie viele Anfragen darf ein Key pro Minute?" />
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-ai" onClick={() => void ask()}>Assistent fragen</button>
+      </div>
+      <p className="status" role="status">{status}</p>
+      {answer && <div className="msg"><p className="who">Assistent</p><p>{answer}</p></div>}
+      {sources.length > 0 && (
+        <p className="muted" style={{ marginTop: 8 }}>
+          Quellen: {sources.map((s, i) => <span key={i} className="badge badge-cyan" style={{ marginRight: 6 }}>[{i + 1}] {s.title}</span>)}
+        </p>
+      )}
+    </>
+  );
+}
+
+export function AssistantWidget({ onNeedLogin }: { onNeedLogin: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState('');
+  const [items, setItems] = useState<Array<{ who: string; text: string; mine?: boolean }>>([
+    { who: 'Assistent', text: 'Hallo, ich bin dein BKG-Assistent. Frag mich etwas zu deinem Wissen oder zum Proxy.' },
+  ]);
+  const [busy, setBusy] = useState(false);
+  const ask = async () => {
+    const q = input.trim();
+    if (!q || busy) return;
+    if (!clientToken()) { onNeedLogin(); return; }
+    setItems((m) => [...m, { who: 'Du', text: q, mine: true }]);
+    setInput('');
+    setBusy(true);
+    try {
+      const res = await clientFetch('/v1/rag/query', { method: 'POST', body: JSON.stringify({ question: q }) });
+      const d = (await res.json().catch(() => ({}))) as { answer?: string; sources?: RagSource[]; error?: { message?: string } };
+      if (!res.ok) throw new Error(d.error?.message ?? `Fehler ${res.status}`);
+      const src = (d.sources ?? []).map((s, i) => `[${i + 1}] ${s.title}`).join(' ');
+      setItems((m) => [...m, { who: 'Assistent', text: `${d.answer ?? ''}${src ? `\nQuellen: ${src}` : ''}` }]);
+    } catch (e) {
+      setItems((m) => [...m, { who: 'Assistent', text: `Fehler: ${e instanceof Error ? e.message : 'unbekannt'}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="widget">
+      {open && (
+        <div className="widget-panel" role="dialog" aria-label="BKG Assistent">
+          <div className="widget-head">
+            <strong>BKG Assistent</strong>
+            <button className="btn" onClick={() => setOpen(false)} aria-label="Assistent schließen">Schließen</button>
+          </div>
+          <div className="widget-log" aria-live="polite">
+            {items.map((m, i) => (
+              <div key={i} className={`msg${m.mine ? ' user' : ''}`}><p className="who">{m.who}</p><p>{m.text}</p></div>
+            ))}
+          </div>
+          <label htmlFor="widgetInput">Frage an den Assistenten</label>
+          <div className="row">
+            <div><input id="widgetInput" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(); }} placeholder="Frage schreiben" /></div>
+            <button className="btn btn-ai" onClick={() => void ask()} disabled={busy}>{busy ? 'Sucht...' : 'Fragen'}</button>
+          </div>
+        </div>
+      )}
+      <button className="btn btn-ai widget-button" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {open ? 'Assistent schließen' : 'Assistent fragen'}
+      </button>
+    </div>
   );
 }

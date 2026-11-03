@@ -3,7 +3,7 @@ import {
   AnalyticsData, OverviewData, SettingsData, adminApi, fmt, loginPassword, ms, setTokens,
 } from './lib/api';
 import { CapacityPage, ClientsPage, ModelsPage, OverviewPage, ReliabilityPage } from './pages/Pages';
-import { ChatPage, ImagesPage, SpeechPage } from './pages/Studio';
+import { AssistantWidget, ChatPage, ImagesPage, KnowledgePage, SpeechPage } from './pages/Studio';
 import { SettingsPage } from './pages/Settings';
 
 const NAV: Array<{ group: string; items: Array<{ id: string; label: string }> }> = [
@@ -18,7 +18,7 @@ const NAV: Array<{ group: string; items: Array<{ id: string; label: string }> }>
   {
     group: 'Studio',
     items: [
-      { id: 'chat', label: 'Chat' }, { id: 'images', label: 'Bilder' }, { id: 'speech', label: 'Sprache' },
+      { id: 'chat', label: 'Chat' }, { id: 'images', label: 'Bilder' }, { id: 'speech', label: 'Sprache' }, { id: 'knowledge', label: 'Wissen' },
     ],
   },
   { group: 'System', items: [{ id: 'settings', label: 'Settings' }] },
@@ -279,12 +279,14 @@ export default function App() {
               {tab === 'chat' && <ChatPage />}
               {tab === 'images' && <ImagesPage />}
               {tab === 'speech' && <SpeechPage />}
+              {tab === 'knowledge' && <KnowledgePage />}
               {tab === 'settings' && (
                 <SettingsPage settings={settings} overview={overview} analytics={analytics} reload={() => void loadAll()} />
               )}
             </div>
           )}
         </main>
+        <AssistantWidget onNeedLogin={() => setShowLogin(true)} />
         {showLogin && (
           <div className="modal-backdrop" role="presentation" onClick={() => setShowLogin(false)}>
             <div

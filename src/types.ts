@@ -127,6 +127,7 @@ export interface Env {
   ADMIN_KV?: KVNamespace;
   ASSETS?: Fetcher;
   DB?: D1Database;
+  VECTORIZE?: VectorizeIndex;
   ADMIN_TOKEN?: string;
   PROXY_AUTH_TOKEN: string;
   /** Optional override of the bundled routes.json — a JSON string of RouteConfig. */

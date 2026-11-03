@@ -41,6 +41,7 @@ import {
   wrapStreamForMetrics,
 } from './metrics';
 import { getAnalytics } from './analytics';
+import { addDocument, listDocuments, deleteDocument, queryRag, embedTexts } from './rag';
 import { slotCounts, joinQueue, queueHeartbeat, isQueueHead, leaveQueue } from './limiter';
 
 interface ClientIdentity {
@@ -73,6 +74,8 @@ const IMAGE_MODELS: Record<string, { id: string; contentType: string } | 'pollin
     contentType: 'image/jpeg',
   },
   dreamshaper: { id: '@cf/lykon/dreamshaper-8-lcm', contentType: 'image/png' },
+  'flux-schnell': { id: '@cf/black-forest-labs/flux-1-schnell', contentType: 'image/jpeg' },
+  'lucid-origin': { id: '@cf/leonardo/lucid-origin', contentType: 'image/jpeg' },
   'pollinations-flux': 'pollinations',
 };
 
@@ -84,7 +87,8 @@ export default {
 
     try {
       const url = new URL(request.url);
-      const path = url.pathname;
+      // Hand-typed clients often send //anthropic/ — collapse duplicate slashes.
+      const path = url.pathname.replace(/\/{2,}/g, '/');
 
       // Health check — no auth required
       if ((path === '/health' || path === '/') && request.method === 'GET') {
@@ -180,10 +184,54 @@ export default {
         }
       }
 
+      // Embeddings (OpenAI-style, Workers AI bge-m3)
+      if (request.method === 'POST' && path === '/v1/embeddings') {
+        const body = (await request.json()) as { input?: string | string[] };
+        const texts = Array.isArray(body.input) ? body.input : body.input ? [body.input] : [];
+        if (!texts.length) throw new ProxyError('Invalid request: input is required', 400);
+        const vectors = await embedTexts(env, texts);
+        return json({
+          object: 'list',
+          model: '@cf/baai/bge-m3',
+          data: vectors.map((embedding, index) => ({ object: 'embedding', index, embedding })),
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        });
+      }
+
+      // Knowledge base (RAG, Vectorize + D1 like DevAssist/Tocyn)
+      if (request.method === 'POST' && path === '/v1/rag/documents') {
+        const body = (await request.json()) as { title?: string; text?: string };
+        if (!body.text?.trim()) throw new ProxyError('Invalid request: text is required', 400);
+        const doc = await addDocument(env, identity.label, body.title?.trim() || 'Ohne Titel', body.text);
+        return json({ ok: true, document: doc }, 201);
+      }
+      if (request.method === 'GET' && path === '/v1/rag/documents') {
+        return json({ documents: await listDocuments(env) });
+      }
+      if (request.method === 'DELETE' && path.startsWith('/v1/rag/documents/')) {
+        const id = decodeURIComponent(path.slice('/v1/rag/documents/'.length));
+        const deleted = await deleteDocument(env, id);
+        if (!deleted) throw new ProxyError('Document not found', 404);
+        return json({ ok: true, id });
+      }
+      if (request.method === 'POST' && path === '/v1/rag/query') {
+        return await handleRagQuery(request, env, settings);
+      }
+
+      // Speech-to-text (Whisper on Workers AI)
+      if (request.method === 'POST' && path === '/v1/audio/transcriptions') {
+        return await handleTranscription(request, env);
+      }
+
       // Anthropic-format chat completions — POST only
+      // (/anthropic and /anthropic/ are accepted as short aliases for hand-typed curls;
+      // SDKs use /anthropic/v1/messages)
       if (
         request.method === 'POST' &&
-        (path === '/anthropic/v1/messages' || path === '/anthropic/messages')
+        (path === '/anthropic/v1/messages' ||
+          path === '/anthropic/messages' ||
+          path === '/anthropic' ||
+          path === '/anthropic/')
       ) {
         return await handleAnthropicChat(request, env, identity, agent, settings, ctx);
       }
@@ -199,6 +247,24 @@ export default {
       throw new ProxyError('Not found', 404);
     } catch (error) {
       console.error('[Worker] Error:', error);
+      const requestPath = new URL(request.url).pathname;
+      if (requestPath.startsWith('/anthropic')) {
+        const proxyError = error instanceof ProxyError ? error : null;
+        const status = proxyError?.statusCode ?? 500;
+        const type =
+          status === 401 ? 'authentication_error'
+          : status === 404 ? 'not_found_error'
+          : status === 429 ? 'rate_limit_error'
+          : status === 400 ? 'invalid_request_error'
+          : 'api_error';
+        return new Response(
+          JSON.stringify({
+            type: 'error',
+            error: { type, message: proxyError?.message ?? 'Internal server error' },
+          }),
+          { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } }
+        );
+      }
       const errorResponse = createErrorResponse(error);
       const headers = new Headers(errorResponse.headers);
       for (const [key, value] of Object.entries(CORS_HEADERS)) {
@@ -549,7 +615,22 @@ async function handleImageGeneration(
   if (!env.AI) {
     throw new ProxyError('Cloudflare AI binding not available', 500);
   }
-  const result = await env.AI.run(cfModel.id, { prompt });
+  const rawResult: unknown = await env.AI.run(cfModel.id, { prompt });
+  // Some models answer with JSON {image: base64} instead of binary image bytes.
+  let result: unknown = rawResult;
+  let contentType = cfModel.contentType;
+  if (
+    rawResult &&
+    typeof rawResult === 'object' &&
+    typeof (rawResult as { image?: unknown }).image === 'string'
+  ) {
+    const base64 = (rawResult as { image: string }).image.replace(/^data:image\/\w+;base64,/, '');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    result = bytes;
+    contentType = 'image/jpeg';
+  }
   ctx.waitUntil(
     recordMetric(
       env,
@@ -567,7 +648,7 @@ async function handleImageGeneration(
     )
   );
   return new Response(result as BodyInit, {
-    headers: { 'Content-Type': cfModel.contentType, ...CORS_HEADERS },
+    headers: { 'Content-Type': contentType, ...CORS_HEADERS },
   });
 }
 
@@ -588,6 +669,7 @@ async function handleSpeech(
     input?: string;
     text?: string;
     voice?: string;
+    engine?: string;
   };
   const text = (body.input ?? body.text ?? '').trim();
   if (!text) {
@@ -597,6 +679,25 @@ async function handleSpeech(
     throw new ProxyError('Invalid request: text too long (max 2000)', 400);
   }
   const voice = body.voice?.trim() || DEFAULT_VOICE;
+  if (body.engine === 'melotts') {
+    if (!env.AI) throw new ProxyError('Cloudflare AI binding not available', 500);
+    const result = (await env.AI.run('@cf/myshell-ai/melotts', {
+      prompt: text,
+    })) as { audio?: string };
+    if (!result.audio) throw new ProxyError('MeloTTS returned no audio', 502);
+    const binary = atob(result.audio);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    ctx.waitUntil(recordMetric(env, {
+      ts: startedAt, route: 'tts-melotts', upstreamModel: '@cf/myshell-ai/melotts', client: identity.label, agent,
+      upstreamKey: '', status: 200, outcome: 'success', errorClass: 'none',
+      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
+      promptTokens: 0, completionTokens: 0, reasoningTokens: 0, toolCalls: 0, truncated: 0,
+      stream: 0, temperature: null, topP: null, maxTokens: null, messages: 1,
+      capacityTotal: totalCapacity(settings),
+    }, settings.retentionDays));
+    return new Response(bytes, { headers: { 'Content-Type': 'audio/wav', ...CORS_HEADERS } });
+  }
   try {
     const stream = await createAudioStream({ text, voice });
     // Prime the first chunk so upstream failures surface as 502, not a broken stream
@@ -1147,6 +1248,9 @@ async function handleAnthropicChat(
   if (!body.model) {
     throw new ProxyError('Invalid request: model is required', 400);
   }
+  if (!body.max_tokens) {
+    body.max_tokens = 1024;
+  }
 
   console.log(`[AnthropicHandler] model=${body.model} stream=${body.stream || false}`);
   void identity;
@@ -1337,6 +1441,72 @@ async function invalidateModelsCache(env: Env): Promise<void> {
   } catch {
     // best effort
   }
+}
+
+async function handleRagQuery(request: Request, env: Env, settings: Settings): Promise<Response> {
+  const body = (await request.json()) as { question?: string; model?: string; topK?: number };
+  const question = body.question?.trim();
+  if (!question) throw new ProxyError('Invalid request: question is required', 400);
+  const hits = await queryRag(env, question, Math.min(Math.max(body.topK ?? 5, 1), 10));
+  const context = hits.length
+    ? hits.map((h, i) => `[${i + 1}] (${h.title}) ${h.text}`).join('\n\n')
+    : '';
+  const router = new Router(env, await loadEffectiveRoutes(env, settings), {
+    settings,
+    keyUsage: await slotCounts(env),
+  });
+  const response = await router.executeWithFallback(
+    {
+      model: body.model?.trim() || 'cf-free',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Du bist der BKG-Assistent. Antworte kurz und hilfreich auf Deutsch. Nutze das gegebene Wissen, wenn es passt, und nenne die Quelle mit [Nummer]. Wenn das Wissen nicht passt, antworte aus allgemeinem Wissen und sage das ehrlich.',
+        },
+        {
+          role: 'user',
+          content: context ? `Wissen:\n${context}\n\nFrage: ${question}` : question,
+        },
+      ],
+      max_tokens: 768,
+    },
+    'openai'
+  );
+  if (!response.success) {
+    throw new ProxyError(response.error || 'Assistant failed', response.statusCode || 500);
+  }
+  return json({
+    answer: response.response?.choices?.[0]?.message?.content ?? '',
+    model: response.upstreamModel ?? body.model ?? 'cf-free',
+    sources: hits.map((h) => ({ title: h.title, score: h.score, docId: h.docId })),
+  });
+}
+
+async function handleTranscription(request: Request, env: Env): Promise<Response> {
+  if (!env.AI) throw new ProxyError('Cloudflare AI binding not available', 500);
+  let audioBase64: string;
+  const contentType = request.headers.get('Content-Type') ?? '';
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) throw new ProxyError('Invalid request: file is required', 400);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    audioBase64 = btoa(binary);
+  } else {
+    const body = (await request.json()) as { audio?: string };
+    audioBase64 = body.audio ?? '';
+  }
+  if (!audioBase64) throw new ProxyError('Invalid request: audio is required', 400);
+  if (audioBase64.length > 14_000_000) throw new ProxyError('Audio too large (max about 10 MB)', 400);
+  const result = (await env.AI.run('@cf/openai/whisper-large-v3-turbo', {
+    audio: audioBase64,
+  })) as { text?: string };
+  return json({ text: result.text ?? '' });
 }
 
 // =============================================================================

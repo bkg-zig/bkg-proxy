@@ -18,6 +18,10 @@ binding = "ADMIN_KV"
 id = "36c99f9286a94318916afca4281716eb"
 
 # Request metrics history for the analytics dashboard
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "bkg-rag"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "blg-metrics"
