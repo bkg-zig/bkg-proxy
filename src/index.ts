@@ -202,7 +202,12 @@ export default {
       if (request.method === 'POST' && path === '/v1/rag/documents') {
         const body = (await request.json()) as { title?: string; text?: string };
         if (!body.text?.trim()) throw new ProxyError('Invalid request: text is required', 400);
-        const doc = await addDocument(env, identity.label, body.title?.trim() || 'Ohne Titel', body.text);
+        const doc = await addDocument(
+          env,
+          identity.label,
+          body.title?.trim() || 'Ohne Titel',
+          body.text
+        );
         return json({ ok: true, document: doc }, 201);
       }
       if (request.method === 'GET' && path === '/v1/rag/documents') {
@@ -252,11 +257,15 @@ export default {
         const proxyError = error instanceof ProxyError ? error : null;
         const status = proxyError?.statusCode ?? 500;
         const type =
-          status === 401 ? 'authentication_error'
-          : status === 404 ? 'not_found_error'
-          : status === 429 ? 'rate_limit_error'
-          : status === 400 ? 'invalid_request_error'
-          : 'api_error';
+          status === 401
+            ? 'authentication_error'
+            : status === 404
+              ? 'not_found_error'
+              : status === 429
+                ? 'rate_limit_error'
+                : status === 400
+                  ? 'invalid_request_error'
+                  : 'api_error';
         return new Response(
           JSON.stringify({
             type: 'error',
@@ -688,14 +697,37 @@ async function handleSpeech(
     const binary = atob(result.audio);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    ctx.waitUntil(recordMetric(env, {
-      ts: startedAt, route: 'tts-melotts', upstreamModel: '@cf/myshell-ai/melotts', client: identity.label, agent,
-      upstreamKey: '', status: 200, outcome: 'success', errorClass: 'none',
-      latencyMs: Date.now() - startedAt, ttftMs: Date.now() - startedAt, generationMs: 0,
-      promptTokens: 0, completionTokens: 0, reasoningTokens: 0, toolCalls: 0, truncated: 0,
-      stream: 0, temperature: null, topP: null, maxTokens: null, messages: 1,
-      capacityTotal: totalCapacity(settings),
-    }, settings.retentionDays));
+    ctx.waitUntil(
+      recordMetric(
+        env,
+        {
+          ts: startedAt,
+          route: 'tts-melotts',
+          upstreamModel: '@cf/myshell-ai/melotts',
+          client: identity.label,
+          agent,
+          upstreamKey: '',
+          status: 200,
+          outcome: 'success',
+          errorClass: 'none',
+          latencyMs: Date.now() - startedAt,
+          ttftMs: Date.now() - startedAt,
+          generationMs: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          toolCalls: 0,
+          truncated: 0,
+          stream: 0,
+          temperature: null,
+          topP: null,
+          maxTokens: null,
+          messages: 1,
+          capacityTotal: totalCapacity(settings),
+        },
+        settings.retentionDays
+      )
+    );
     return new Response(bytes, { headers: { 'Content-Type': 'audio/wav', ...CORS_HEADERS } });
   }
   try {
@@ -1502,7 +1534,8 @@ async function handleTranscription(request: Request, env: Env): Promise<Response
     audioBase64 = body.audio ?? '';
   }
   if (!audioBase64) throw new ProxyError('Invalid request: audio is required', 400);
-  if (audioBase64.length > 14_000_000) throw new ProxyError('Audio too large (max about 10 MB)', 400);
+  if (audioBase64.length > 14_000_000)
+    throw new ProxyError('Audio too large (max about 10 MB)', 400);
   const result = (await env.AI.run('@cf/openai/whisper-large-v3-turbo', {
     audio: audioBase64,
   })) as { text?: string };

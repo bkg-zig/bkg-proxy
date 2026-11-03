@@ -76,9 +76,7 @@ export async function addDocument(
       metadata: { docId: id, title },
     }))
   );
-  const stmt = env.DB.prepare(
-    'INSERT INTO rag_chunks (id, doc_id, idx, text) VALUES (?, ?, ?, ?)'
-  );
+  const stmt = env.DB.prepare('INSERT INTO rag_chunks (id, doc_id, idx, text) VALUES (?, ?, ?, ?)');
   await env.DB.batch(chunks.map((chunk, i) => stmt.bind(`${id}:${i}`, id, i, chunk)));
   const doc: RagDoc = { id, title, owner, chunks: chunks.length, created_at: Date.now() };
   await env.DB.prepare(
