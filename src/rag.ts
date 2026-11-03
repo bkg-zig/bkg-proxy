@@ -150,7 +150,14 @@ export async function queryRag(env: Env, question: string, topK = 5): Promise<Ra
   // Fallback for freshly saved documents whose vectors are not indexed yet:
   // plain term search over the chunk store, so new knowledge answers at once.
   if (!hits.length) {
-    const terms = [...new Set(question.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter((w) => w.length > 3))].slice(0, 6);
+    const terms = [
+      ...new Set(
+        question
+          .toLowerCase()
+          .split(/[^a-z0-9äöüß]+/i)
+          .filter((w) => w.length > 3)
+      ),
+    ].slice(0, 6);
     for (const term of terms) {
       if (hits.length >= topK) break;
       const rows = await env.DB.prepare(
