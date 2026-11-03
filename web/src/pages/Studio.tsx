@@ -328,7 +328,7 @@ function TranscribeCard() {
   return (
     <>
       <h2 style={{ marginTop: 30 }}>Ton in Text (Whisper, gratis)</h2>
-      <p className="muted">Sprachnachricht oder Aufnahme hochladen, BKG schreibt sie als Text.</p>
+      <p className="muted">Sprachnachricht oder Aufnahme hochladen, bKG schreibt sie als Text.</p>
       <label>Ton-Datei</label>
       <input ref={fileRef} type="file" accept="audio/*" />
       <div className="row" style={{ marginTop: 12 }}>
@@ -345,7 +345,7 @@ function TranscribeCard() {
   );
 }
 
-const HELP_TEXT = `BKG Proxy Hilfe. Die API liegt unter api.eysho.info, das Studio unter studio.eysho.info. Modelle: auto ist das beste NVIDIA-Modell, fast ist schnell, code ist für Programmieren, vision versteht Bilder. cf-free, cf-fast, cf-code und cf-reasoning sind gratis Cloudflare-Modelle. Jeder NVIDIA-Key darf 40 Anfragen in 60 Sekunden. Wenn alle Keys voll sind, wartet die Anfrage in einer fairen Schlange, statt zu scheitern. Streams senden Herzschlag-Zeilen, damit die Verbindung nicht abreißt. Im Dashboard können Admins Modelle und Keys verwalten, Nutzer sehen nur ihre eigenen Keys. Bilder gehen mit SDXL, Flux und Lucid. Sprache vorlesen geht mit Edge-Stimmen und Melo. Ton in Text geht mit Whisper. Wissen: Eigene Texte können als Dokumente gespeichert und dann vom Assistenten durchsucht werden.`;
+const HELP_TEXT = `bKG Proxy Hilfe. Die API liegt unter api.eysho.info, das Studio unter studio.eysho.info. Modelle: auto ist das beste NVIDIA-Modell, fast ist schnell, code ist für Programmieren, vision versteht Bilder. cf-free, cf-fast, cf-code und cf-reasoning sind gratis Cloudflare-Modelle. Jeder NVIDIA-Key darf 40 Anfragen in 60 Sekunden. Wenn alle Keys voll sind, wartet die Anfrage in einer fairen Schlange, statt zu scheitern. Streams senden Herzschlag-Zeilen, damit die Verbindung nicht abreißt. Im Dashboard können Admins Modelle und Keys verwalten, Nutzer sehen nur ihre eigenen Keys. Bilder gehen mit SDXL, Flux und Lucid. Sprache vorlesen geht mit Edge-Stimmen und Melo. Ton in Text geht mit Whisper. Wissen: Eigene Texte können als Dokumente gespeichert und dann vom Assistenten durchsucht werden.`;
 
 interface RagDoc { id: string; title: string; chunks: number; created_at: number }
 interface RagSource { title: string; score: number }
@@ -381,10 +381,10 @@ export function KnowledgePage() {
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={() => {
           void (async () => {
-            try { await add('BKG Proxy Hilfe', HELP_TEXT); setStatus('Hilfe gespeichert. Der Assistent kennt jetzt den Proxy.'); await load(); }
+            try { await add('bKG Proxy Hilfe', HELP_TEXT); setStatus('Hilfe gespeichert. Der Assistent kennt jetzt den Proxy.'); await load(); }
             catch (e) { setStatus(`Fehler: ${e instanceof Error ? e.message : 'unbekannt'}`); }
           })();
-        }}>BKG Hilfe als erstes Wissen speichern</button>
+        }}>bKG Hilfe als erstes Wissen speichern</button>
       </div>
       <label>Titel</label>
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Zum Beispiel: Meine Notizen" />
@@ -465,7 +465,7 @@ export function AssistantWidget({ onNeedLogin }: { onNeedLogin: () => void }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [items, setItems] = useState<Array<{ who: string; text: string; mine?: boolean }>>([
-    { who: 'Assistent', text: 'Hallo, ich bin dein BKG-Assistent. Frag mich etwas zu deinem Wissen oder zum Proxy.' },
+    { who: 'Assistent', text: 'Hallo, ich bin dein bKG-Assistent. Frag mich etwas zu deinem Wissen oder zum Proxy.' },
   ]);
   const [busy, setBusy] = useState(false);
   const ask = async () => {
@@ -490,9 +490,9 @@ export function AssistantWidget({ onNeedLogin }: { onNeedLogin: () => void }) {
   return (
     <div className="widget">
       {open && (
-        <div className="widget-panel" role="dialog" aria-label="BKG Assistent">
+        <div className="widget-panel" role="dialog" aria-label="bKG Assistent">
           <div className="widget-head">
-            <strong>BKG Assistent</strong>
+            <strong>bKG Assistent</strong>
             <button className="btn" onClick={() => setOpen(false)} aria-label="Assistent schließen">Schließen</button>
           </div>
           <div className="widget-log" aria-live="polite">

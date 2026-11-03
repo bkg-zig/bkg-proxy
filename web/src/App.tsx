@@ -113,7 +113,7 @@ export default function App() {
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
-            <div className="brand-name">BKG</div>
+            <div className="brand-name">bKG</div>
             <div className="brand-sub">Proxy · Studio</div>
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function App() {
           >
             {menuOpen ? 'Menü schließen' : 'Menü öffnen'}
           </button>
-          <div className="title">BKG Proxy · {NAV.flatMap((s) => s.items).find((i) => i.id === tab)?.label}</div>
+          <div className="title">bKG Proxy · {NAV.flatMap((s) => s.items).find((i) => i.id === tab)?.label}</div>
           <div className="search">
             <input
               type="search"

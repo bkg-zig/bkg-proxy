@@ -1494,7 +1494,7 @@ async function handleRagQuery(request: Request, env: Env, settings: Settings): P
         {
           role: 'system',
           content:
-            'Du bist der BKG-Assistent. Antworte kurz und hilfreich auf Deutsch. Nutze das gegebene Wissen, wenn es passt, und nenne die Quelle mit [Nummer]. Wenn das Wissen nicht passt, antworte aus allgemeinem Wissen und sage das ehrlich.',
+            'Du bist der bKG-Assistent. Antworte kurz und hilfreich auf Deutsch. Nutze das gegebene Wissen, wenn es passt, und nenne die Quelle mit [Nummer]. Wenn das Wissen nicht passt, antworte aus allgemeinem Wissen und sage das ehrlich.',
         },
         {
           role: 'user',
