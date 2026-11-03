@@ -97,7 +97,7 @@ export async function createClientKey(
   name: string,
   owner = 'Master'
 ): Promise<{ record: ClientKeyRecord; plainKey: string }> {
-  const plainKey = `blg_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+  const plainKey = `bKG_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
   const record: ClientKeyRecord = {
     id: crypto.randomUUID(),
     name: name.trim() || 'API-Key',
@@ -313,7 +313,9 @@ export async function verifyPassword(password: string, record: string): Promise<
 }
 
 export async function findClientKey(env: Env, token: string): Promise<ClientKeyRecord | null> {
-  if (!env.ADMIN_KV || !token.startsWith('blg_')) return null;
+  // New keys start with bKG_; keys issued before the rename start with blg_
+  // and must keep working, so both prefixes are accepted here.
+  if (!env.ADMIN_KV || !(token.startsWith('bKG_') || token.startsWith('blg_'))) return null;
   const hash = await sha256Hex(token);
   const keys = await listClientKeys(env);
   return keys.find((k) => k.hash === hash) ?? null;
