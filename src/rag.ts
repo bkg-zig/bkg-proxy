@@ -117,24 +117,54 @@ export interface RagHit {
 }
 
 export async function queryRag(env: Env, question: string, topK = 5): Promise<RagHit[]> {
-  if (!(await ensureRagSchema(env)) || !env.DB || !env.VECTORIZE) return [];
-  const [vector] = await embedTexts(env, [question]);
-  const matches = await env.VECTORIZE.query(vector, {
-    topK,
-    returnMetadata: 'all',
-  });
+  if (!(await ensureRagSchema(env)) || !env.DB) return [];
   const hits: RagHit[] = [];
-  for (const match of matches.matches ?? []) {
-    const row = await env.DB.prepare('SELECT text FROM rag_chunks WHERE id = ?')
-      .bind(match.id)
-      .first<{ text: string }>();
-    if (row) {
-      hits.push({
-        docId: String(match.metadata?.docId ?? ''),
-        title: String(match.metadata?.title ?? ''),
-        score: match.score,
-        text: row.text,
+  // Vector search first. Vectorize mutations are eventually consistent and
+  // deleted vectors can linger, so ask for extra matches and verify every
+  // hit against D1 (the chunk row only exists for live documents).
+  if (env.VECTORIZE) {
+    try {
+      const [vector] = await embedTexts(env, [question]);
+      const matches = await env.VECTORIZE.query(vector, {
+        topK: topK * 4,
+        returnMetadata: 'all',
       });
+      for (const match of matches.matches ?? []) {
+        if (hits.length >= topK) break;
+        const row = await env.DB.prepare('SELECT text FROM rag_chunks WHERE id = ?')
+          .bind(match.id)
+          .first<{ text: string }>();
+        if (row) {
+          hits.push({
+            docId: String(match.metadata?.docId ?? ''),
+            title: String(match.metadata?.title ?? ''),
+            score: match.score,
+            text: row.text,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[RAG] vector query failed, falling back to text search:', error);
+    }
+  }
+  // Fallback for freshly saved documents whose vectors are not indexed yet:
+  // plain term search over the chunk store, so new knowledge answers at once.
+  if (!hits.length) {
+    const terms = [...new Set(question.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter((w) => w.length > 3))].slice(0, 6);
+    for (const term of terms) {
+      if (hits.length >= topK) break;
+      const rows = await env.DB.prepare(
+        `SELECT c.id, c.text, d.title, c.doc_id FROM rag_chunks c JOIN rag_docs d ON d.id = c.doc_id
+         WHERE lower(c.text) LIKE ? LIMIT ?`
+      )
+        .bind(`%${term}%`, topK)
+        .all<{ id: string; text: string; title: string; doc_id: string }>();
+      for (const row of rows.results ?? []) {
+        if (hits.length >= topK) break;
+        if (!hits.some((h) => h.text === row.text)) {
+          hits.push({ docId: row.doc_id, title: row.title, score: 0.5, text: row.text });
+        }
+      }
     }
   }
   return hits;

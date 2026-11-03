@@ -1489,7 +1489,7 @@ async function handleRagQuery(request: Request, env: Env, settings: Settings): P
   });
   const response = await router.executeWithFallback(
     {
-      model: body.model?.trim() || 'cf-free',
+      model: body.model?.trim() || 'auto',
       messages: [
         {
           role: 'system',
@@ -1501,7 +1501,7 @@ async function handleRagQuery(request: Request, env: Env, settings: Settings): P
           content: context ? `Wissen:\n${context}\n\nFrage: ${question}` : question,
         },
       ],
-      max_tokens: 768,
+      max_tokens: 1536,
     },
     'openai'
   );
