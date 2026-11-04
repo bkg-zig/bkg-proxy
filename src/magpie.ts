@@ -153,7 +153,14 @@ export async function synthesizeMagpie(
     AbortSignal.timeout(Math.max(1_000, Math.min(20_000, deadline - Date.now())));
   if (voice) {
     try {
-      const named = await postSynthesize(magpieBase(env), key, text, language, voice, attemptSignal());
+      const named = await postSynthesize(
+        magpieBase(env),
+        key,
+        text,
+        language,
+        voice,
+        attemptSignal()
+      );
       if (named.ok) return { audio: await named.arrayBuffer(), usedVoice: voice };
       await named.text().catch(() => '');
     } catch (error) {
