@@ -63,6 +63,8 @@ export async function listMagpieVoices(env: Env): Promise<MagpieVoice[]> {
   if (!key) throw new Error('No NVIDIA key configured for Magpie TTS');
   const res = await fetch(`${magpieBase(env)}/v1/audio/list_voices`, {
     headers: { Authorization: `Bearer ${key}` },
+    // Never hang the /v1/voices/de response on a slow upstream.
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`Magpie voice list failed with status ${res.status}`);
   const data = (await res.json()) as Record<string, { voices?: string[] }>;
@@ -98,7 +100,8 @@ async function postSynthesize(
   key: string,
   text: string,
   language: string,
-  voice: string | null
+  voice: string | null,
+  signal: AbortSignal
 ): Promise<Response> {
   // Hand-built multipart: the NVCF parser is picky about the exact framing
   // (a stray CRLF in a field value already makes the voice lookup fail).
@@ -122,6 +125,9 @@ async function postSynthesize(
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
     },
     body,
+    // A hanging upstream must never kill the Worker (Cloudflare error 1102):
+    // each attempt gets at most 20 s, the whole synthesis at most ~25 s.
+    signal: signal,
   });
 }
 
@@ -140,22 +146,52 @@ export async function synthesizeMagpie(
   const language = normalizeLanguage(rawLanguage);
   const key = firstNvidiaKey(env);
   if (!key) throw new Error('No NVIDIA key configured for Magpie TTS');
+  // Total budget ~25 s: the named try plus one default retry. Anything slower
+  // returns a clean 502 instead of tripping the Worker's resource limit.
+  const deadline = Date.now() + 25_000;
+  const attemptSignal = () =>
+    AbortSignal.timeout(Math.max(1_000, Math.min(20_000, deadline - Date.now())));
   if (voice) {
-    const named = await postSynthesize(magpieBase(env), key, text, language, voice);
-    if (named.ok) return { audio: await named.arrayBuffer(), usedVoice: voice };
-    // Named catalog voices are rejected by this deployment; fall back to the
-    // built-in default voice for the language instead of failing the request.
-    await named.text().catch(() => '');
+    try {
+      const named = await postSynthesize(magpieBase(env), key, text, language, voice, attemptSignal());
+      if (named.ok) return { audio: await named.arrayBuffer(), usedVoice: voice };
+      await named.text().catch(() => '');
+    } catch (error) {
+      if (Date.now() >= deadline) throw toTimeoutError(error);
+    }
   }
   // The upstream model occasionally answers a follow-up request with a
-  // transient Triton error or a 429, so retry the default voice with pauses.
-  let lastDetail = '';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0)
-      await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 3000 : 8000));
-    const fallback = await postSynthesize(magpieBase(env), key, text, language, null);
-    if (fallback.ok) return { audio: await fallback.arrayBuffer(), usedVoice: 'default' };
-    lastDetail = await fallback.text().catch(() => '');
+  // transient Triton error or a 429, so retry the default voice once briefly.
+  let lastDetail = 'upstream timeout';
+  for (let attempt = 0; attempt < 2 && Date.now() < deadline; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(2_000, Math.max(0, deadline - Date.now())))
+      );
+      if (Date.now() >= deadline) break;
+    }
+    try {
+      const fallback = await postSynthesize(
+        magpieBase(env),
+        key,
+        text,
+        language,
+        null,
+        attemptSignal()
+      );
+      if (fallback.ok) return { audio: await fallback.arrayBuffer(), usedVoice: 'default' };
+      lastDetail = await fallback.text().catch(() => '');
+      if (Date.now() >= deadline) break;
+    } catch (error) {
+      lastDetail = error instanceof Error ? error.message : String(error);
+      break;
+    }
   }
   throw new Error(`Magpie synthesis failed: ${lastDetail.slice(0, 200)}`);
+
+  function toTimeoutError(error: unknown): Error {
+    return new Error(
+      `Magpie synthesis timed out: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
