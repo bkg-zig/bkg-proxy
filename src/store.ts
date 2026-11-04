@@ -254,7 +254,11 @@ export function totalCapacity(settings: Settings): number {
   );
 }
 
-const PBKDF2_ITERATIONS = 600_000;
+// Cloudflare Workers' WebCrypto caps PBKDF2 at 100_000 iterations —
+// anything higher fails at runtime with "iteration counts above 100000
+// are not supported". Existing hashes keep working: verifyPassword reads
+// the iteration count from the stored record.
+const PBKDF2_ITERATIONS = 100_000;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
